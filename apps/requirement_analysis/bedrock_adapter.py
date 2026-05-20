@@ -101,7 +101,7 @@ class BedrockAdapter:
         full_content = ""
         for event in response['stream']:
             if 'contentBlockDelta' in event:
-                chunk = event['contentBlockDelta']['delta'].get('text', '')
+                chunk = event.get('contentBlockDelta', {}).get('delta', {}).get('text', '')
                 if chunk:
                     full_content += chunk
                     if callback:

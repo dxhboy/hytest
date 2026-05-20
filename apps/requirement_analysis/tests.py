@@ -162,3 +162,26 @@ class BedrockAdapterTest(TestCase):
         # user messages should exclude the system message
         self.assertEqual(len(call_kwargs['messages']), 1)
         self.assertEqual(call_kwargs['messages'][0]['role'], 'user')
+
+    @patch('apps.requirement_analysis.bedrock_adapter.boto3')
+    def test_call_stream_yields_chunks(self, mock_boto3):
+        from apps.requirement_analysis.bedrock_adapter import BedrockAdapter
+        mock_client = MagicMock()
+        mock_boto3.client.return_value = mock_client
+        mock_client.converse_stream.return_value = {
+            'stream': [
+                {'contentBlockDelta': {'delta': {'text': 'hello'}}},
+                {'contentBlockDelta': {'delta': {'text': ' world'}}},
+            ]
+        }
+        messages = [{'role': 'user', 'content': 'test'}]
+
+        async def collect():
+            chunks = []
+            async for chunk in BedrockAdapter.call_stream(self._make_config(), messages):
+                chunks.append(chunk)
+            return chunks
+
+        import asyncio
+        chunks = asyncio.get_event_loop().run_until_complete(collect())
+        self.assertEqual(chunks, ['hello', ' world'])
