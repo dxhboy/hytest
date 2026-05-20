@@ -1,0 +1,209 @@
+Metadata-Version: 2.4
+Name: fakerx
+Version: 0.2.0
+Summary: 强大的Python数据生成库，Faker的增强版
+Author-email: YingZi <yxdszlkc@163.com>
+License: MIT
+Project-URL: Homepage, https://github.com/yourusername/fakerx
+Project-URL: Repository, https://github.com/yourusername/fakerx
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: faker
+Requires-Dist: pydantic
+Requires-Dist: pydantic[email]
+Requires-Dist: pyyaml
+Dynamic: license-file
+
+# FakerX
+
+FakerX 是一个强大的 Python 库，用于生成高质量的测试数据。它是 Faker 库的增强版，提供了更丰富的自定义选项、更灵活的数据结构生成，并集成了数据验证功能。
+
+## 安装
+
+```bash
+pip install fakerx
+```
+
+## 基础用法
+
+```python
+from fakerx import FakerX
+
+fake = FakerX('zh_CN')
+
+name = fake.name()
+address = fake.address()
+date = fake.date_of_birth()
+
+print(f'生成姓名: {name}')
+print(f'生成地址: {address}')
+print(f'生成出生日期: {date}')
+```
+
+## 结构化数据生成
+
+```python
+user_schema = {
+    'id': '{pyint}',
+    'username': '{user_name}',
+    'email': '{email}',
+    'profile': {
+        'level': {'elements': ['初级', '中级', '高级']}
+    }
+}
+
+user_data = fake.schema(user_schema, iterations=2)
+print(user_data)
+```
+
+## 数据验证
+
+```python
+from pydantic import BaseModel, EmailStr, conint
+
+class User(BaseModel):
+    id: conint(gt=0)
+    name: str
+    email: EmailStr
+
+valid_user = fake.pydantic(User)
+print(valid_user)
+```
+
+## 批处理
+
+```python
+usernames = fake.batch('user_name', iterations=1000, unique=True)
+print(usernames[:5])
+```
+
+## 唯一字段约束
+
+```python
+user_schema = {
+    'id': '{pyint}',
+    'username': '{user_name}',
+    'email': '{email}'
+}
+
+user_data = fake.schema(user_schema, iterations=5, unique_fields=['username', 'email'])
+print(user_data)
+```
+
+## 数据导出
+
+```python
+# 导出为JSON
+json_data = fake.to_json(user_data)
+print(json_data)
+
+# 导出为CSV
+csv_data = fake.to_csv(user_data)
+print(csv_data)
+
+# 保存到文件
+fake.to_csv(user_data, 'users.csv')
+```
+
+## 高级功能
+
+```python
+# 生成UUID
+uid = fake.uuid4()
+print(f'UUID: {uid}')
+
+# 自定义URL
+custom_url = fake.custom_url('example.com')
+print(f'自定义URL: {custom_url}')
+
+# 邮箱验证
+is_valid = fake.validate_email('test@example.com')
+print(f'邮箱有效: {is_valid}')
+
+# 设置随机种子
+fake.seed(42)
+name1 = fake.name()
+fake.seed(42)
+name2 = fake.name()
+print(f'重现结果: {name1 == name2}')
+
+# 批量生成（生成器）
+usernames_gen = fake.batch('user_name', iterations=1000, unique=True)
+first_5 = list(usernames_gen)[:5]
+print(f'前5个用户名: {first_5}')
+
+# 数据统计
+stats = fake.stats(user_data)
+print(f'数据统计: {stats}')
+
+# 带验证的数据生成
+valid_email = fake.generate_with_validation('email', lambda x: 'test' not in x)
+print(f'有效邮箱: {valid_email}')
+```
+## 命令行工具
+
+```bash
+# 安装后可以使用命令行工具
+pip install -e .
+
+# 生成10个用户名
+fakerx --method user_name --count 10
+
+# 从schema文件生成数据
+fakerx --schema user_schema.json --count 5 --output users.json
+
+# 生成CSV格式数据
+fakerx --schema user_schema.json --count 5 --format csv --output users.csv
+```
+
+## 数据库集成
+
+```python
+# 将数据插入SQLite数据库
+fake.to_database(user_data, 'users', 'test.db')
+```
+
+## 配置文件支持
+
+创建 `config.yaml`:
+```yaml
+schema:
+  id: '{pyint}'
+  name: '{name}'
+  email: '{email}'
+iterations: 10
+unique_fields: ['email']
+```
+
+```python
+# 从配置文件生成数据
+data = fake.generate_from_config('config.yaml')
+```
+
+## 异步生成
+
+```python
+import asyncio
+
+async def main():
+    # 异步批量生成
+    names = await fake.async_batch('name', iterations=100)
+    print(names[:5])
+
+asyncio.run(main())
+```
+## 许可证
+
+MIT

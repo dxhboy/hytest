@@ -1,0 +1,2 @@
+[console_scripts]
+fakerx = fakerx_cli:main
