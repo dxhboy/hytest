@@ -103,3 +103,62 @@ class RequirementAnalysisTestCase(TestCase):
         )
         self.assertEqual(test_case.case_id, 'TC-001')
         self.assertEqual(test_case.status, 'generated')
+
+
+from unittest.mock import MagicMock, patch
+
+
+class BedrockAdapterTest(TestCase):
+    def _make_config(self):
+        config = MagicMock()
+        config.aws_access_key_id = 'AKIAIOSFODNN7EXAMPLE'
+        config.aws_secret_access_key = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+        config.aws_region = 'us-east-1'
+        config.aws_model_id = 'anthropic.claude-sonnet-4-5'
+        config.max_tokens = 4096
+        config.temperature = 0.7
+        config.top_p = 0.9
+        return config
+
+    @patch('apps.requirement_analysis.bedrock_adapter.boto3')
+    def test_call_non_stream_returns_content(self, mock_boto3):
+        from apps.requirement_analysis.bedrock_adapter import BedrockAdapter
+        mock_client = MagicMock()
+        mock_boto3.client.return_value = mock_client
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'hello world'}]}}
+        }
+        messages = [
+            {'role': 'system', 'content': 'You are a tester.'},
+            {'role': 'user', 'content': 'Write test cases.'},
+        ]
+        import asyncio
+        result = asyncio.get_event_loop().run_until_complete(
+            BedrockAdapter.call(self._make_config(), messages)
+        )
+        self.assertIn('choices', result)
+        self.assertEqual(result['choices'][0]['message']['content'], 'hello world')
+
+    @patch('apps.requirement_analysis.bedrock_adapter.boto3')
+    def test_system_message_extracted(self, mock_boto3):
+        from apps.requirement_analysis.bedrock_adapter import BedrockAdapter
+        mock_client = MagicMock()
+        mock_boto3.client.return_value = mock_client
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'ok'}]}}
+        }
+        messages = [
+            {'role': 'system', 'content': 'system prompt'},
+            {'role': 'user', 'content': 'hello'},
+        ]
+        import asyncio
+        asyncio.get_event_loop().run_until_complete(
+            BedrockAdapter.call(self._make_config(), messages)
+        )
+        call_kwargs = mock_client.converse.call_args[1]
+        # system messages should be passed as 'system' param
+        self.assertIn('system', call_kwargs)
+        self.assertEqual(call_kwargs['system'][0]['text'], 'system prompt')
+        # user messages should exclude the system message
+        self.assertEqual(len(call_kwargs['messages']), 1)
+        self.assertEqual(call_kwargs['messages'][0]['role'], 'user')
