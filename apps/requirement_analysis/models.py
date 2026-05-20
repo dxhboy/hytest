@@ -203,6 +203,7 @@ class AIModelConfig(models.Model):
         ('qwen', '通义千问'),
         ('siliconflow', '硅基流动'),
         ('zhipu', '智谱'),
+        ('bedrock_claude', 'AWS Bedrock Claude'),
         ('other', '其他'),
     ]
 
@@ -216,11 +217,15 @@ class AIModelConfig(models.Model):
     model_type = models.CharField(max_length=20, choices=MODEL_CHOICES, verbose_name='模型类型')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, verbose_name='角色')
     api_key = models.CharField(max_length=200, verbose_name='API Key', blank=True, null=True)
-    base_url = models.URLField(verbose_name='API Base URL')
+    base_url = models.CharField(max_length=500, verbose_name='API Base URL', blank=True, null=True)
     model_name = models.CharField(max_length=100, verbose_name='模型名称')
     max_tokens = models.IntegerField(default=4096, verbose_name='最大Token数')
     temperature = models.FloatField(default=0.7, verbose_name='温度参数')
     top_p = models.FloatField(default=0.9, verbose_name='Top P参数')
+    aws_access_key_id = models.CharField(max_length=255, verbose_name='AWS Access Key ID', blank=True, null=True)
+    aws_secret_access_key = models.CharField(max_length=255, verbose_name='AWS Secret Access Key', blank=True, null=True)
+    aws_region = models.CharField(max_length=50, verbose_name='AWS Region', default='us-east-1', blank=True, null=True)
+    aws_model_id = models.CharField(max_length=100, verbose_name='Bedrock Model ID', blank=True, null=True)
     is_active = models.BooleanField(default=True, verbose_name='是否启用')
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='创建者')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')

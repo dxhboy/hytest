@@ -185,3 +185,16 @@ class BedrockAdapterTest(TestCase):
         import asyncio
         chunks = asyncio.get_event_loop().run_until_complete(collect())
         self.assertEqual(chunks, ['hello', ' world'])
+
+
+class AIModelConfigBedrockTest(TestCase):
+    def test_bedrock_claude_in_model_choices(self):
+        from apps.requirement_analysis.models import AIModelConfig
+        choices_keys = [c[0] for c in AIModelConfig.MODEL_CHOICES]
+        self.assertIn('bedrock_claude', choices_keys)
+
+    def test_bedrock_fields_exist(self):
+        from apps.requirement_analysis.models import AIModelConfig
+        field_names = [f.name for f in AIModelConfig._meta.get_fields()]
+        for field in ('aws_access_key_id', 'aws_secret_access_key', 'aws_region', 'aws_model_id'):
+            self.assertIn(field, field_names, f"Missing field: {field}")
