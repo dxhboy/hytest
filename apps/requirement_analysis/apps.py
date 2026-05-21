@@ -7,9 +7,9 @@ class RequirementAnalysisConfig(AppConfig):
     verbose_name = '需求分析'
 
     def ready(self):
-        import os
-        # 避免 Django 开发服务器 auto-reloader 导致 scheduler 启动两次
-        if os.environ.get('RUN_MAIN') != 'true' and os.environ.get('DJANGO_SETTINGS_MODULE'):
+        import sys
+        # Don't start scheduler during test runs
+        if 'test' in sys.argv:
             return
         try:
             from .scheduler import start_scheduler
