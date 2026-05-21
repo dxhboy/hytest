@@ -182,6 +182,7 @@ export default {
       qwen: "通义千问",
       siliconflow: "硅基流动",
       zhipu: "智谱",
+      bedrock_claude: "AWS Bedrock Claude",
       other: "其他",
     },
     roles: {

@@ -615,6 +615,17 @@ export default {
     excelFileName: "测试用例_{taskId}_{date}.xlsx",
   },
 
+  // 定时用例生成任务
+  scheduledTask: {
+    name: "任务名称",
+    document: "需求文档",
+    aiModel: "AI模型配置",
+    scheduledTime: "执行时间",
+    status: "启用状态",
+    lastRunAt: "最近执行时间",
+    lastRunStatus: "最近执行结果",
+  },
+
   // 配置引导弹框
   configGuide: {
     title: "开始使用AI用例生成功能",

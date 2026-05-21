@@ -49,6 +49,9 @@ export default {
     aiCaseManagement: "AI Case Management",
     aiExecutionRecords: "AI Test Reports",
 
+    // AI Generation (Scheduled Tasks)
+    scheduledGenerationTasks: "Scheduled Generation",
+
     // Configuration Center
     aiCaseGenerationConfig: "AI Test Case Config",
     aiModelConfig: "Model Config",

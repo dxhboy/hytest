@@ -51,6 +51,7 @@ export default {
   generationConfig: requirementModule.generationConfig,
   taskDetail: requirementModule.taskDetail,
   configGuide: requirementModule.configGuide,
+  scheduledTask: requirementModule.scheduledTask,
 
   // API测试模块
   apiTesting: apiTestingModule,

@@ -194,6 +194,7 @@ export default {
       qwen: "Qwen",
       siliconflow: "SiliconFlow",
       zhipu: "Zhipu AI",
+      bedrock_claude: "AWS Bedrock Claude",
       other: "Other",
     },
     roles: {

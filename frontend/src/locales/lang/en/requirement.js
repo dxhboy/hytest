@@ -629,6 +629,17 @@ export default {
     excelFileName: "TestCases_{taskId}_{date}.xlsx",
   },
 
+  // Scheduled Generation Tasks
+  scheduledTask: {
+    name: "Task Name",
+    document: "Document",
+    aiModel: "AI Model",
+    scheduledTime: "Run Time",
+    status: "Status",
+    lastRunAt: "Last Run At",
+    lastRunStatus: "Last Result",
+  },
+
   // Configuration Guide Modal
   configGuide: {
     title: "Get Started with AI Test Case Generation",

@@ -49,6 +49,9 @@ export default {
     aiCaseManagement: "AI 用例管理",
     aiExecutionRecords: "AI测试报告",
 
+    // AI用例生成（定时任务）
+    scheduledGenerationTasks: "定时用例生成",
+
     // 配置中心
     aiCaseGenerationConfig: "AI用例生成配置",
     aiModelConfig: "用例模型配置",
