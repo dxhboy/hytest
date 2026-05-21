@@ -166,11 +166,13 @@ class AIModelConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = AIModelConfig
         fields = ['id', 'name', 'model_type', 'model_type_display', 'role', 'role_display',
-                 'api_key', 'api_key_masked', 'base_url', 'model_name', 'max_tokens', 'temperature', 'top_p', 
+                 'api_key', 'api_key_masked', 'base_url', 'model_name', 'max_tokens', 'temperature', 'top_p',
+                 'aws_access_key_id', 'aws_secret_access_key', 'aws_region', 'aws_model_id',
                  'is_active', 'created_by', 'created_by_name', 'created_at', 'updated_at']
         read_only_fields = ['created_by', 'created_by_name']
         extra_kwargs = {
-            'api_key': {'write_only': True}  # API Key只用于写入，不在响应中返回
+            'api_key': {'write_only': True},  # API Key只用于写入，不在响应中返回
+            'aws_secret_access_key': {'write_only': True},  # AWS Secret Key只用于写入，不在响应中返回
         }
     
     def get_api_key_masked(self, obj):
