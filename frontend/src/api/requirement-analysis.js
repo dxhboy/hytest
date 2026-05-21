@@ -147,3 +147,53 @@ export function deletePromptConfig(id) {
     method: "delete",
   });
 }
+
+// ==================== 需求文档 ====================
+
+export function getRequirementDocuments(params) {
+  return request({
+    url: '/requirement-analysis/documents/',
+    method: 'get',
+    params,
+  })
+}
+
+// ==================== 定时生成任务 ====================
+
+export function getScheduledGenerationTasks(params) {
+  return request({
+    url: '/requirement-analysis/scheduled-generation/',
+    method: 'get',
+    params,
+  })
+}
+
+export function createScheduledGenerationTask(data) {
+  return request({
+    url: '/requirement-analysis/scheduled-generation/',
+    method: 'post',
+    data,
+  })
+}
+
+export function updateScheduledGenerationTask(id, data) {
+  return request({
+    url: `/requirement-analysis/scheduled-generation/${id}/`,
+    method: 'put',
+    data,
+  })
+}
+
+export function deleteScheduledGenerationTask(id) {
+  return request({
+    url: `/requirement-analysis/scheduled-generation/${id}/`,
+    method: 'delete',
+  })
+}
+
+export function toggleScheduledGenerationTask(id) {
+  return request({
+    url: `/requirement-analysis/scheduled-generation/${id}/toggle/`,
+    method: 'post',
+  })
+}
