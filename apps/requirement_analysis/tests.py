@@ -288,3 +288,30 @@ class ScheduledGenerationTaskAPITest(TestCase):
         )
         response = self.client.post(f'/api/requirement-analysis/scheduled-generation/{task.pk}/toggle/')
         self.assertIn(response.status_code, [200, 201])
+
+
+class SchedulerCheckDueTest(TestCase):
+    def test_check_due_tasks_function_exists(self):
+        from apps.requirement_analysis.scheduler import check_due_tasks
+        self.assertTrue(callable(check_due_tasks))
+
+    def test_check_due_tasks_skips_inactive(self):
+        """已禁用的任务不应被触发"""
+        from apps.requirement_analysis.models import ScheduledGenerationTask, RequirementDocument
+        from apps.requirement_analysis.scheduler import check_due_tasks
+        import datetime
+        UserModel = get_user_model()
+        user = UserModel.objects.create_user(username='scheduser', password='pass')
+        doc = RequirementDocument.objects.create(
+            title='Doc', document_type='txt',
+            uploaded_by=user, extracted_text='text'
+        )
+        now = datetime.datetime.now()
+        ScheduledGenerationTask.objects.create(
+            name='Inactive', requirement_document=doc,
+            scheduled_time=now.time().replace(second=0, microsecond=0),
+            is_active=False, created_by=user
+        )
+        with patch('apps.requirement_analysis.views.run_generation_for_document') as mock_run:
+            check_due_tasks()
+            mock_run.assert_not_called()
