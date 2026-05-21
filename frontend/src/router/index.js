@@ -169,6 +169,12 @@ const routes = [
         component: () => import("@/views/requirement-analysis/TaskDetail.vue"),
       },
       {
+        path: 'scheduled-generation',
+        name: 'ScheduledGenerationTasks',
+        component: () =>
+          import('@/views/requirement-analysis/ScheduledGenerationTasks.vue'),
+      },
+      {
         path: "profile",
         name: "Profile",
         component: () => import("@/views/profile/UserProfile.vue"),

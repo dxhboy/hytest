@@ -26,6 +26,9 @@
               <el-menu-item index="/ai-generation/generated-testcases">{{
                 $t("menu.aiGeneratedTestcases")
               }}</el-menu-item>
+              <el-menu-item index="/ai-generation/scheduled-generation">{{
+                $t("menu.scheduledGenerationTasks")
+              }}</el-menu-item>
             </el-sub-menu>
             <el-menu-item index="/ai-generation/projects">
               <el-icon><Folder /></el-icon>
