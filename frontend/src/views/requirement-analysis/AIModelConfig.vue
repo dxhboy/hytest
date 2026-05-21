@@ -261,7 +261,7 @@
                 type="text"
                 class="form-input"
                 :placeholder="$t('configuration.aiModel.modelNamePlaceholder')"
-                required
+                :required="configForm.model_type !== 'bedrock_claude'"
               />
               <small class="form-hint">
                 {{ $t("configuration.aiModel.modelNameHint") }}
@@ -674,14 +674,31 @@ export default {
       );
 
       // 验证必填字段
-      const requiredFields = [
-        { name: "name", value: this.configForm.name },
-        { name: "model_type", value: this.configForm.model_type },
-        { name: "role", value: this.configForm.role },
-        { name: "api_key", value: this.configForm.api_key },
-        { name: "base_url", value: this.configForm.base_url },
-        { name: "model_name", value: this.configForm.model_name },
-      ];
+      const isBedrock = this.configForm.model_type === "bedrock_claude";
+      const requiredFields = isBedrock
+        ? [
+            { name: "name", value: this.configForm.name },
+            { name: "model_type", value: this.configForm.model_type },
+            { name: "role", value: this.configForm.role },
+            {
+              name: "aws_access_key_id",
+              value: this.configForm.aws_access_key_id,
+            },
+            {
+              name: "aws_secret_access_key",
+              value: this.isEditing ? "ok" : this.configForm.aws_secret_access_key,
+            },
+            { name: "aws_region", value: this.configForm.aws_region },
+            { name: "aws_model_id", value: this.configForm.aws_model_id },
+          ]
+        : [
+            { name: "name", value: this.configForm.name },
+            { name: "model_type", value: this.configForm.model_type },
+            { name: "role", value: this.configForm.role },
+            { name: "api_key", value: this.isEditing ? "ok" : this.configForm.api_key },
+            { name: "base_url", value: this.configForm.base_url },
+            { name: "model_name", value: this.configForm.model_name },
+          ];
 
       const emptyFields = requiredFields.filter(
         (field) => !field.value || field.value.trim() === "",
