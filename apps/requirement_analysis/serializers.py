@@ -288,3 +288,29 @@ class GenerationConfigSerializer(serializers.ModelSerializer):
             'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+
+from .models import ScheduledGenerationTask
+
+
+class ScheduledGenerationTaskSerializer(serializers.ModelSerializer):
+    requirement_document_title = serializers.CharField(
+        source='requirement_document.title', read_only=True
+    )
+    ai_model_config_name = serializers.CharField(
+        source='ai_model_config.name', read_only=True
+    )
+    last_run_task_id = serializers.CharField(
+        source='last_run_task.task_id', read_only=True
+    )
+
+    class Meta:
+        model = ScheduledGenerationTask
+        fields = [
+            'id', 'name', 'requirement_document', 'requirement_document_title',
+            'ai_model_config', 'ai_model_config_name',
+            'scheduled_time', 'is_active',
+            'last_run_at', 'last_run_status', 'last_run_task_id',
+            'created_by', 'created_at',
+        ]
+        read_only_fields = ['created_by', 'created_at', 'last_run_at', 'last_run_status', 'last_run_task_id']

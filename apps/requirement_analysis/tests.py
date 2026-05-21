@@ -259,3 +259,32 @@ class RunGenerationForDocumentTest(TestCase):
         self.assertIn('document_id', sig.parameters)
         self.assertIn('ai_model_config_id', sig.parameters)
         self.assertIn('created_by_id', sig.parameters)
+
+
+from rest_framework.test import APIClient
+
+
+class ScheduledGenerationTaskAPITest(TestCase):
+    def setUp(self):
+        UserModel = get_user_model()
+        self.user = UserModel.objects.create_user(username='apiuser', password='pass')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_list_endpoint_returns_200(self):
+        response = self.client.get('/api/requirement-analysis/scheduled-generation/')
+        self.assertEqual(response.status_code, 200)
+
+    def test_toggle_endpoint_exists(self):
+        from apps.requirement_analysis.models import ScheduledGenerationTask, RequirementDocument
+        import datetime
+        doc = RequirementDocument.objects.create(
+            title='Test Doc', document_type='txt',
+            uploaded_by=self.user, extracted_text='some text'
+        )
+        task = ScheduledGenerationTask.objects.create(
+            name='Night Task', requirement_document=doc,
+            scheduled_time=datetime.time(2, 0), created_by=self.user
+        )
+        response = self.client.post(f'/api/requirement-analysis/scheduled-generation/{task.pk}/toggle/')
+        self.assertIn(response.status_code, [200, 201])
