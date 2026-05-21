@@ -49,6 +49,130 @@ from .services import RequirementAnalysisService, DocumentProcessor
 logger = logging.getLogger(__name__)
 
 
+def run_generation_for_document(document_id: int, ai_model_config_id: int = None, created_by_id: int = None):
+    """
+    为指定需求文档创建并执行用例生成任务。
+    供定时任务和手动触发共用。
+    返回 TestCaseGenerationTask 实例。
+    """
+    import threading
+    import asyncio
+    from .models import (
+        RequirementDocument, AIModelConfig, PromptConfig,
+        GenerationConfig, TestCaseGenerationTask, AIModelService
+    )
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+
+    doc = RequirementDocument.objects.get(pk=document_id)
+    requirement_text = doc.extracted_text or doc.title
+
+    writer_config = (
+        AIModelConfig.objects.get(pk=ai_model_config_id)
+        if ai_model_config_id
+        else AIModelConfig.objects.filter(role='writer', is_active=True).first()
+    )
+    reviewer_config = AIModelConfig.objects.filter(role='reviewer', is_active=True).first()
+    writer_prompt = PromptConfig.get_active_config('writer')
+    reviewer_prompt = PromptConfig.get_active_config('reviewer')
+
+    gen_config = GenerationConfig.get_active_config()
+    output_mode = gen_config.default_output_mode if gen_config else 'stream'
+
+    created_by = User.objects.get(pk=created_by_id) if created_by_id else (
+        User.objects.filter(is_superuser=True).first() or User.objects.first()
+    )
+
+    task = TestCaseGenerationTask.objects.create(
+        title=f"[定时] {doc.title}",
+        requirement_text=requirement_text,
+        writer_model_config=writer_config,
+        reviewer_model_config=reviewer_config,
+        writer_prompt_config=writer_prompt,
+        reviewer_prompt_config=reviewer_prompt,
+        output_mode=output_mode,
+        created_by=created_by,
+    )
+
+    def execute():
+        try:
+            task.status = 'generating'
+            task.progress = 10
+            task.save()
+
+            enable_auto_review = gen_config.enable_auto_review if gen_config else True
+            review_timeout = gen_config.review_timeout if gen_config else 120
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                if task.output_mode == 'stream':
+                    task.stream_buffer = ''
+                    task.stream_position = 0
+                    task.save()
+
+                    def save_stream_buffer(content):
+                        from django.utils import timezone
+                        task.stream_buffer = content
+                        task.stream_position = len(content)
+                        task.last_stream_update = timezone.now()
+                        task.save(update_fields=['stream_buffer', 'stream_position', 'last_stream_update'])
+
+                    from asgiref.sync import sync_to_async
+                    async_save = sync_to_async(save_stream_buffer)
+
+                    async def stream_cb(chunk):
+                        await async_save(chunk)
+
+                    loop.run_until_complete(
+                        AIModelService.generate_test_cases_stream(task, stream_cb)
+                    )
+                else:
+                    loop.run_until_complete(AIModelService.generate_test_cases(task))
+
+                task.progress = 30
+                task.save()
+
+                if enable_auto_review and reviewer_config and reviewer_prompt:
+                    task.status = 'reviewing'
+                    task.progress = 60
+                    task.save()
+                    test_cases = task.generated_test_cases
+                    if task.output_mode == 'stream':
+                        loop.run_until_complete(
+                            AIModelService.review_test_cases_stream(task, test_cases, None)
+                        )
+                    else:
+                        loop.run_until_complete(AIModelService.review_test_cases(task, test_cases))
+                    task.progress = 70
+                    task.save()
+
+                    task.status = 'revising'
+                    task.progress = 85
+                    task.save()
+                    loop.run_until_complete(
+                        AIModelService.revise_test_cases_based_on_review(task)
+                    )
+
+                task.status = 'completed'
+                task.progress = 100
+                from django.utils import timezone
+                task.completed_at = timezone.now()
+                task.save()
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"定时生成任务 {task.task_id} 失败: {e}")
+            task.status = 'failed'
+            task.error_message = str(e)
+            task.save()
+
+    thread = threading.Thread(target=execute, daemon=True)
+    thread.start()
+    return task
+
+
 class RequirementDocumentViewSet(viewsets.ModelViewSet):
     """需求文档视图集"""
     queryset = RequirementDocument.objects.all()

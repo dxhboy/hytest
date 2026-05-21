@@ -248,3 +248,14 @@ class ScheduledGenerationTaskModelTest(TestCase):
         from apps.requirement_analysis.models import ScheduledGenerationTask
         field = ScheduledGenerationTask._meta.get_field('last_run_status')
         self.assertEqual(field.default, 'pending')
+
+
+class RunGenerationForDocumentTest(TestCase):
+    def test_function_exists_and_is_callable(self):
+        from apps.requirement_analysis.views import run_generation_for_document
+        import inspect
+        self.assertTrue(callable(run_generation_for_document))
+        sig = inspect.signature(run_generation_for_document)
+        self.assertIn('document_id', sig.parameters)
+        self.assertIn('ai_model_config_id', sig.parameters)
+        self.assertIn('created_by_id', sig.parameters)
