@@ -230,3 +230,21 @@ class AIModelConfigBedrockTest(TestCase):
         field_names = [f.name for f in AIModelConfig._meta.get_fields()]
         for field in ('aws_access_key_id', 'aws_secret_access_key', 'aws_region', 'aws_model_id'):
             self.assertIn(field, field_names, f"Missing field: {field}")
+
+
+class ScheduledGenerationTaskModelTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='testuser', password='pass')
+
+    def test_model_fields_exist(self):
+        from apps.requirement_analysis.models import ScheduledGenerationTask
+        field_names = [f.name for f in ScheduledGenerationTask._meta.get_fields()]
+        for field in ('name', 'requirement_document', 'ai_model_config',
+                      'scheduled_time', 'is_active', 'last_run_at',
+                      'last_run_status', 'last_run_task', 'created_by', 'created_at'):
+            self.assertIn(field, field_names, f"Missing field: {field}")
+
+    def test_default_status_is_pending(self):
+        from apps.requirement_analysis.models import ScheduledGenerationTask
+        field = ScheduledGenerationTask._meta.get_field('last_run_status')
+        self.assertEqual(field.default, 'pending')

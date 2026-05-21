@@ -1227,3 +1227,46 @@ class AIModelService:
         logger.info(f"重新编号完成: 共{total_cases}条测试用例，编号范围: {prefix}001-{prefix}{total_cases:03d}")
 
         return renumbered_content
+
+
+class ScheduledGenerationTask(models.Model):
+    """定时用例生成任务"""
+    STATUS_CHOICES = [
+        ('pending', '待执行'),
+        ('running', '执行中'),
+        ('success', '成功'),
+        ('failed', '失败'),
+    ]
+
+    name = models.CharField(max_length=100, verbose_name='任务名称')
+    requirement_document = models.ForeignKey(
+        RequirementDocument, on_delete=models.CASCADE,
+        related_name='scheduled_generation_tasks', verbose_name='需求文档'
+    )
+    ai_model_config = models.ForeignKey(
+        AIModelConfig, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='scheduled_tasks', verbose_name='AI模型配置'
+    )
+    scheduled_time = models.TimeField(verbose_name='每日执行时间（HH:MM）')
+    is_active = models.BooleanField(default=True, verbose_name='是否启用')
+    last_run_at = models.DateTimeField(null=True, blank=True, verbose_name='最近执行时间')
+    last_run_status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name='最近执行状态'
+    )
+    last_run_task = models.ForeignKey(
+        TestCaseGenerationTask, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='scheduled_source', verbose_name='最近生成任务'
+    )
+    created_by = models.ForeignKey(
+        User, on_delete=models.CASCADE, verbose_name='创建人'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'scheduled_generation_task'
+        verbose_name = '定时用例生成任务'
+        verbose_name_plural = '定时用例生成任务'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} @ {self.scheduled_time}"
