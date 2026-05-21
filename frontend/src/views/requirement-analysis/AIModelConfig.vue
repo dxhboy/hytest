@@ -624,7 +624,7 @@ export default {
         top_p: config.top_p,
         is_active: config.is_active,
         aws_access_key_id: config.aws_access_key_id || "",
-        aws_secret_access_key: config.aws_secret_access_key || "",
+        aws_secret_access_key: config.aws_secret_access_key_masked || "",
         aws_region: config.aws_region || "",
         aws_model_id: config.aws_model_id || "",
       };
@@ -737,10 +737,13 @@ export default {
 
       try {
         if (this.isEditing) {
-          // 编辑时，如果API Key是掩码格式或为空，则不更新它
+          // 编辑时，如果密钥是掩码格式或为空，则不更新它（避免覆盖数据库中的真实值）
           const updateData = { ...this.configForm };
           if (!updateData.api_key || updateData.api_key.includes("*")) {
             delete updateData.api_key;
+          }
+          if (!updateData.aws_secret_access_key || updateData.aws_secret_access_key.includes("*")) {
+            delete updateData.aws_secret_access_key;
           }
 
           console.log("Updating with data:", updateData);

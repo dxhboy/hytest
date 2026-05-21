@@ -162,28 +162,33 @@ class AIModelConfigSerializer(serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     api_key_masked = serializers.SerializerMethodField(read_only=True)
-    
+    aws_secret_access_key_masked = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = AIModelConfig
         fields = ['id', 'name', 'model_type', 'model_type_display', 'role', 'role_display',
                  'api_key', 'api_key_masked', 'base_url', 'model_name', 'max_tokens', 'temperature', 'top_p',
-                 'aws_access_key_id', 'aws_secret_access_key', 'aws_region', 'aws_model_id',
+                 'aws_access_key_id', 'aws_secret_access_key', 'aws_secret_access_key_masked',
+                 'aws_region', 'aws_model_id',
                  'is_active', 'created_by', 'created_by_name', 'created_at', 'updated_at']
         read_only_fields = ['created_by', 'created_by_name']
         extra_kwargs = {
-            'api_key': {'write_only': True},  # API Key只用于写入，不在响应中返回
-            'aws_secret_access_key': {'write_only': True},  # AWS Secret Key只用于写入，不在响应中返回
+            'api_key': {'write_only': True},
+            'aws_secret_access_key': {'write_only': True},
         }
-    
+
+    def _mask(self, value):
+        if not value:
+            return ''
+        if len(value) > 7:
+            return f"{value[:3]}{'*' * (len(value) - 7)}{value[-4:]}"
+        return '*' * len(value)
+
     def get_api_key_masked(self, obj):
-        """返回掩码版本的API Key"""
-        if obj.api_key:
-            # 显示前3个字符和后4个字符，中间用*替代
-            if len(obj.api_key) > 7:
-                return f"{obj.api_key[:3]}{'*' * (len(obj.api_key) - 7)}{obj.api_key[-4:]}"
-            else:
-                return '*' * len(obj.api_key)
-        return ''
+        return self._mask(obj.api_key)
+
+    def get_aws_secret_access_key_masked(self, obj):
+        return self._mask(obj.aws_secret_access_key)
     
     def create(self, validated_data):
         # 自动设置创建者
