@@ -206,7 +206,7 @@
               </select>
             </div>
 
-            <div class="form-group">
+            <div v-if="configForm.model_type !== 'bedrock_claude'" class="form-group">
               <label
                 >{{ $t("configuration.aiModel.apiKey") }}
                 <span class="required">*</span></label
@@ -234,24 +234,24 @@
               </small>
             </div>
 
-            <div class="form-group">
+            <div v-if="configForm.model_type !== 'bedrock_claude'" class="form-group">
               <label
                 >{{ $t("configuration.aiModel.baseUrl") }}
                 <span class="required">*</span></label
               >
               <input
                 v-model="configForm.base_url"
-                type="url"
+                type="text"
                 class="form-input"
                 :placeholder="$t('configuration.aiModel.baseUrlPlaceholder')"
-                required
+                :required="configForm.model_type !== 'bedrock_claude'"
               />
               <small class="form-hint">
                 {{ $t("configuration.aiModel.baseUrlHint") }}
               </small>
             </div>
 
-            <div class="form-group">
+            <div v-if="configForm.model_type !== 'bedrock_claude'" class="form-group">
               <label
                 >{{ $t("configuration.aiModel.modelName") }}
                 <span class="required">*</span></label
