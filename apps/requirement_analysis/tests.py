@@ -187,6 +187,38 @@ class BedrockAdapterTest(TestCase):
         self.assertEqual(chunks, ['hello', ' world'])
 
 
+class AIModelServiceBedrockRoutingTest(TestCase):
+    def _make_bedrock_config(self):
+        config = MagicMock()
+        config.model_type = 'bedrock_claude'
+        config.aws_access_key_id = 'KEY'
+        config.aws_secret_access_key = 'SECRET'
+        config.aws_region = 'us-east-1'
+        config.aws_model_id = 'anthropic.claude-sonnet-4-5'
+        config.max_tokens = 4096
+        config.temperature = 0.7
+        config.top_p = 0.9
+        return config
+
+    @patch('apps.requirement_analysis.bedrock_adapter.boto3')
+    def test_routes_to_bedrock_adapter(self, mock_boto3):
+        from apps.requirement_analysis.models import AIModelService
+        mock_client = MagicMock()
+        mock_boto3.client.return_value = mock_client
+        mock_client.converse.return_value = {
+            'output': {'message': {'content': [{'text': 'result'}]}}
+        }
+        import asyncio
+        result = asyncio.get_event_loop().run_until_complete(
+            AIModelService.call_openai_compatible_api(
+                self._make_bedrock_config(),
+                [{'role': 'user', 'content': 'hello'}]
+            )
+        )
+        self.assertIn('choices', result)
+        mock_client.converse.assert_called_once()
+
+
 class AIModelConfigBedrockTest(TestCase):
     def test_bedrock_claude_in_model_choices(self):
         from apps.requirement_analysis.models import AIModelConfig

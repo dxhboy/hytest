@@ -441,6 +441,10 @@ class AIModelService:
         Returns:
             API响应字典
         """
+        if config.model_type == 'bedrock_claude':
+            from .bedrock_adapter import BedrockAdapter
+            return await BedrockAdapter.call(config, messages, max_tokens)
+
         headers = {
             'Authorization': f'Bearer {config.api_key}',
             'Content-Type': 'application/json'
@@ -544,6 +548,12 @@ class AIModelService:
         """
         流式调用OpenAI兼容格式的API，支持自动续写
         """
+        if config.model_type == 'bedrock_claude':
+            from .bedrock_adapter import BedrockAdapter
+            async for chunk in BedrockAdapter.call_stream(config, messages, callback, max_tokens):
+                yield chunk
+            return
+
         headers = {
             'Authorization': f'Bearer {config.api_key}',
             'Content-Type': 'application/json'
