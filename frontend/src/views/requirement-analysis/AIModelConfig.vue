@@ -174,6 +174,9 @@
                 <option value="zhipu">
                   {{ $t("configuration.aiModel.modelTypes.zhipu") }}
                 </option>
+                <option value="bedrock_claude">
+                  {{ $t("configuration.aiModel.modelTypes.bedrock_claude") }}
+                </option>
                 <option value="other">
                   {{ $t("configuration.aiModel.modelTypes.other") }}
                 </option>
@@ -264,6 +267,44 @@
                 {{ $t("configuration.aiModel.modelNameHint") }}
               </small>
             </div>
+
+            <template v-if="configForm.model_type === 'bedrock_claude'">
+              <div class="form-group">
+                <label>Access Key ID</label>
+                <input
+                  v-model="configForm.aws_access_key_id"
+                  type="text"
+                  class="form-input"
+                  placeholder="AKIAIOSFODNN7EXAMPLE"
+                />
+              </div>
+              <div class="form-group">
+                <label>Secret Access Key</label>
+                <input
+                  v-model="configForm.aws_secret_access_key"
+                  type="password"
+                  class="form-input"
+                />
+              </div>
+              <div class="form-group">
+                <label>Region</label>
+                <input
+                  v-model="configForm.aws_region"
+                  type="text"
+                  class="form-input"
+                  placeholder="us-east-1"
+                />
+              </div>
+              <div class="form-group">
+                <label>Model ID</label>
+                <select v-model="configForm.aws_model_id" class="form-select">
+                  <option value="">-- select or type model id --</option>
+                  <option value="anthropic.claude-sonnet-4-5">Claude Sonnet 4.5</option>
+                  <option value="anthropic.claude-opus-4-7">Claude Opus 4.7</option>
+                  <option value="anthropic.claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                </select>
+              </div>
+            </template>
 
             <div class="form-row">
               <div class="form-group">
@@ -398,6 +439,10 @@ export default {
         temperature: 0.7,
         top_p: 0.9,
         is_active: true,
+        aws_access_key_id: "",
+        aws_secret_access_key: "",
+        aws_region: "",
+        aws_model_id: "",
       },
       // 模型类型与API Base URL的映射关系
       modelBaseUrlMap: {
@@ -556,6 +601,10 @@ export default {
         temperature: 0.7,
         top_p: 0.9,
         is_active: true,
+        aws_access_key_id: "",
+        aws_secret_access_key: "",
+        aws_region: "",
+        aws_model_id: "",
       });
       console.log("Form reset:", JSON.stringify(this.configForm));
     },
@@ -574,6 +623,10 @@ export default {
         temperature: config.temperature,
         top_p: config.top_p,
         is_active: config.is_active,
+        aws_access_key_id: config.aws_access_key_id || "",
+        aws_secret_access_key: config.aws_secret_access_key || "",
+        aws_region: config.aws_region || "",
+        aws_model_id: config.aws_model_id || "",
       };
       this.showEditModal = true;
     },
