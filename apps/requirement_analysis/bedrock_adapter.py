@@ -48,7 +48,6 @@ class BedrockAdapter:
                 inferenceConfig={
                     'maxTokens': actual_max_tokens,
                     'temperature': config.temperature,
-                    'topP': config.top_p,
                 },
             )
             if system_parts:
@@ -83,7 +82,6 @@ class BedrockAdapter:
                 inferenceConfig={
                     'maxTokens': actual_max_tokens,
                     'temperature': config.temperature,
-                    'topP': config.top_p,
                 },
             )
             if system_parts:
