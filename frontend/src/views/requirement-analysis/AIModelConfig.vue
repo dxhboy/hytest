@@ -299,9 +299,12 @@
                 <label>Model ID</label>
                 <select v-model="configForm.aws_model_id" class="form-select">
                   <option value="">-- select or type model id --</option>
-                  <option value="anthropic.claude-sonnet-4-5">Claude Sonnet 4.5</option>
-                  <option value="anthropic.claude-opus-4-7">Claude Opus 4.7</option>
-                  <option value="anthropic.claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                  <option value="us.anthropic.claude-sonnet-4-5-20251001-v1:0">Claude Sonnet 4.5 (us.*)</option>
+                  <option value="us.anthropic.claude-opus-4-5-20251101-v1:0">Claude Opus 4.5 (us.*)</option>
+                  <option value="us.anthropic.claude-haiku-4-5-20251001-v1:0">Claude Haiku 4.5 (us.*)</option>
+                  <option value="anthropic.claude-3-5-sonnet-20241022-v2:0">Claude 3.5 Sonnet v2</option>
+                  <option value="anthropic.claude-3-5-haiku-20241022-v1:0">Claude 3.5 Haiku</option>
+                  <option value="anthropic.claude-3-opus-20240229-v1:0">Claude 3 Opus</option>
                 </select>
               </div>
             </template>
