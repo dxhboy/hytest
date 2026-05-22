@@ -28,6 +28,7 @@ export default {
   nav: navModule.nav,
   modules: navModule.modules,
   menu: navModule.menu,
+  projectCenter: navModule.projectCenter,
 
   // 项目模块
   project: projectModule.project,

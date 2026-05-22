@@ -61,5 +61,16 @@ export default {
     aiModeConfig: "AI智能模式配置",
     notificationConfig: "通知配置",
     difyConfig: "AI评测师配置",
+    projectCenter: "项目管理中心",
+  },
+  projectCenter: {
+    title: "项目管理中心",
+    subtitle: "统一管理 AI 用例生成、接口测试、UI 自动化的项目",
+    aiGeneration: "AI 用例生成",
+    apiTesting: "接口测试",
+    uiAutomation: "UI 自动化",
+    newProject: "新建项目",
+    searchPlaceholder: "搜索项目名称",
+    statusFilter: "状态筛选",
   },
 };

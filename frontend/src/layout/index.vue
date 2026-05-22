@@ -205,6 +205,10 @@
               <el-icon><ChatDotRound /></el-icon>
               <span>{{ $t("menu.difyConfig") }}</span>
             </el-menu-item>
+            <el-menu-item index="/configuration/projects">
+              <el-icon><FolderOpened /></el-icon>
+              <span>{{ $t("menu.projectCenter") }}</span>
+            </el-menu-item>
           </template>
         </el-menu>
       </el-aside>
@@ -316,6 +320,7 @@ import {
   Edit,
   Cpu,
   ArrowDown,
+  FolderOpened,
 } from "@element-plus/icons-vue";
 import logoSvg from "@/assets/images/logo.svg";
 import logoHomePng from "@/assets/images/logo_home.png";
@@ -415,6 +420,7 @@ const breadcrumbTitle = computed(() => {
     "/configuration/ai-mode": t("menu.aiModeConfig"),
     "/configuration/notification": t("menu.notificationConfig"),
     "/configuration/dify": t("menu.difyConfig"),
+    "/configuration/projects": t("menu.projectCenter"),
 
     "/profile": t("nav.profile"),
   };

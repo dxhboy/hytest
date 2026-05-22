@@ -400,6 +400,11 @@ const routes = [
             name: "DifyConfig",
             component: () => import("@/views/configuration/DifyConfig.vue"),
           },
+          {
+            path: "projects",
+            name: "ConfigProjectCenter",
+            component: () => import("@/views/configuration/ProjectCenter.vue"),
+          },
         ],
       },
     ],

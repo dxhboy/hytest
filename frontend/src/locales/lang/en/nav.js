@@ -61,5 +61,16 @@ export default {
     aiModeConfig: "AI Mode Configuration",
     notificationConfig: "Notification Configuration",
     difyConfig: "Dify Configuration",
+    projectCenter: "Project Center",
+  },
+  projectCenter: {
+    title: "Project Center",
+    subtitle: "Manage projects for AI generation, API testing, and UI automation",
+    aiGeneration: "AI Generation",
+    apiTesting: "API Testing",
+    uiAutomation: "UI Automation",
+    newProject: "New Project",
+    searchPlaceholder: "Search project name",
+    statusFilter: "Status",
   },
 };
