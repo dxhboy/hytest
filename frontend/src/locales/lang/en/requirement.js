@@ -372,6 +372,9 @@ export default {
     saving: "💾 Saving...",
     enableConfig: "Enable this config",
     enableHint: "When enabled, other configs of the same type will be disabled",
+    project: "Project",
+    globalConfig: "Global (all projects)",
+    projectHint: "If a project is selected, this config takes priority over the global config for that project",
 
     // Writing Tips
     writingTipsTitle: "Prompt Writing Tips:",

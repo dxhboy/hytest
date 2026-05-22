@@ -367,6 +367,9 @@ export default {
     saving: "💾 保存中...",
     enableConfig: "启用此配置",
     enableHint: "启用后，相同类型的其他配置将被禁用",
+    project: "所属项目",
+    globalConfig: "全局（不限项目）",
+    projectHint: "选择项目后，该配置仅对此项目生效，优先级高于全局配置",
 
     // Writing Tips
     writingTipsTitle: "提示词编写建议:",

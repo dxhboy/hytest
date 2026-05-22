@@ -67,6 +67,10 @@
               </div>
               <div class="config-meta">
                 <div class="meta-item">
+                  <label>{{ $t("promptConfig.project") }}</label>
+                  <span>{{ config.project_name || $t("promptConfig.globalConfig") }}</span>
+                </div>
+                <div class="meta-item">
                   <label>{{ $t("promptConfig.createdAt") }}</label>
                   <span>{{ formatDateTime(config.created_at) }}</span>
                 </div>
@@ -150,6 +154,17 @@
                   {{ $t("promptConfig.reviewerPrompt") }}
                 </option>
               </select>
+            </div>
+
+            <div class="form-group">
+              <label>{{ $t("promptConfig.project") }}</label>
+              <select v-model="configForm.project" class="form-select">
+                <option :value="null">{{ $t("promptConfig.globalConfig") }}</option>
+                <option v-for="p in projects" :key="p.id" :value="p.id">
+                  {{ p.name }}
+                </option>
+              </select>
+              <small class="form-hint">{{ $t("promptConfig.projectHint") }}</small>
             </div>
 
             <div class="form-group">
@@ -345,13 +360,16 @@ export default {
         name: "",
         prompt_type: "",
         content: "",
+        project: null,
         is_active: true,
       },
+      projects: [],
     };
   },
 
   mounted() {
     this.loadConfigs();
+    this.loadProjects();
   },
 
   methods: {
@@ -462,11 +480,21 @@ export default {
       }
     },
 
+    async loadProjects() {
+      try {
+        const response = await api.get("/projects/list/");
+        this.projects = response.data?.results || response.data || [];
+      } catch (e) {
+        this.projects = [];
+      }
+    },
+
     resetForm() {
       this.configForm = {
         name: "",
         prompt_type: "",
         content: "",
+        project: null,
         is_active: true,
       };
     },
@@ -478,6 +506,7 @@ export default {
         name: config.name,
         prompt_type: config.prompt_type,
         content: config.content,
+        project: config.project || null,
         is_active: config.is_active,
       };
       this.showEditModal = true;

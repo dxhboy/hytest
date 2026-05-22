@@ -74,8 +74,9 @@ def run_generation_for_document(document_id: int, ai_model_config_id: int = None
         else AIModelConfig.objects.filter(role='writer', is_active=True).first()
     )
     reviewer_config = AIModelConfig.objects.filter(role='reviewer', is_active=True).first()
-    writer_prompt = PromptConfig.get_active_config('writer')
-    reviewer_prompt = PromptConfig.get_active_config('reviewer')
+    project_id = doc.project_id
+    writer_prompt = PromptConfig.get_active_config('writer', project_id=project_id)
+    reviewer_prompt = PromptConfig.get_active_config('reviewer', project_id=project_id)
 
     gen_config = GenerationConfig.get_active_config()
     output_mode = gen_config.default_output_mode if gen_config else 'stream'
@@ -1432,6 +1433,11 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
             writer_prompt = None
             reviewer_prompt = None
 
+            # 从请求中提取项目ID，用于优先匹配项目级提示词
+            req_project_id = validated_data.get('project')
+            if req_project_id and hasattr(req_project_id, 'pk'):
+                req_project_id = req_project_id.pk
+
             if validated_data.get('use_writer_model', True):
                 # 优先查找任意启用的编写模型配置
                 writer_config = AIModelConfig.objects.filter(role='writer', is_active=True).first()
@@ -1442,7 +1448,7 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-                writer_prompt = PromptConfig.get_active_config('writer')
+                writer_prompt = PromptConfig.get_active_config('writer', project_id=req_project_id)
                 if not writer_prompt:
                     return Response(
                         {'error': '未找到可用的测试用例编写提示词配置'},
@@ -1459,7 +1465,7 @@ class TestCaseGenerationTaskViewSet(viewsets.ModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-                reviewer_prompt = PromptConfig.get_active_config('reviewer')
+                reviewer_prompt = PromptConfig.get_active_config('reviewer', project_id=req_project_id)
                 if not reviewer_prompt:
                     return Response(
                         {'error': '未找到可用的测试用例评审提示词配置'},

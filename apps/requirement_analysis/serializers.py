@@ -210,11 +210,12 @@ class PromptConfigSerializer(serializers.ModelSerializer):
     """提示词配置序列化器"""
     prompt_type_display = serializers.CharField(source='get_prompt_type_display', read_only=True)
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
-    
+    project_name = serializers.CharField(source='project.name', read_only=True, default=None)
+
     class Meta:
         model = PromptConfig
-        fields = ['id', 'name', 'prompt_type', 'prompt_type_display', 'content', 'is_active',
-                 'created_by', 'created_by_name', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'prompt_type', 'prompt_type_display', 'content', 'project',
+                 'project_name', 'is_active', 'created_by', 'created_by_name', 'created_at', 'updated_at']
         read_only_fields = ['created_by', 'created_by_name']
     
     def create(self, validated_data):

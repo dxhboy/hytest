@@ -261,6 +261,11 @@ class PromptConfig(models.Model):
     name = models.CharField(max_length=100, verbose_name='配置名称')
     prompt_type = models.CharField(max_length=20, choices=PROMPT_CHOICES, verbose_name='提示词类型')
     content = models.TextField(verbose_name='提示词内容')
+    project = models.ForeignKey(
+        'projects.Project', on_delete=models.CASCADE,
+        null=True, blank=True, verbose_name='所属项目',
+        help_text='为空则为全局配置，有项目则优先于全局配置生效'
+    )
     is_active = models.BooleanField(default=True, verbose_name='是否启用')
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='创建者')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
@@ -275,11 +280,20 @@ class PromptConfig(models.Model):
         return f"{self.get_prompt_type_display()} - {self.name}"
 
     @classmethod
-    def get_active_config(cls, prompt_type: str):
-        """获取活跃的提示词配置"""
+    def get_active_config(cls, prompt_type: str, project_id: int = None):
+        """获取活跃的提示词配置。有 project_id 时优先取项目级，fallback 全局。"""
+        if project_id:
+            project_config = cls.objects.filter(
+                prompt_type=prompt_type,
+                is_active=True,
+                project_id=project_id,
+            ).first()
+            if project_config:
+                return project_config
         return cls.objects.filter(
             prompt_type=prompt_type,
-            is_active=True
+            is_active=True,
+            project__isnull=True,
         ).first()
 
 
