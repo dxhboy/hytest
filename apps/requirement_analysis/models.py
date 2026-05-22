@@ -218,7 +218,7 @@ class AIModelConfig(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, verbose_name='角色')
     api_key = models.CharField(max_length=200, verbose_name='API Key', blank=True, null=True)
     base_url = models.CharField(max_length=500, verbose_name='API Base URL', blank=True, null=True)
-    model_name = models.CharField(max_length=100, verbose_name='模型名称')
+    model_name = models.CharField(max_length=100, verbose_name='模型名称', blank=True, null=True)
     max_tokens = models.IntegerField(default=4096, verbose_name='最大Token数')
     temperature = models.FloatField(default=0.7, verbose_name='温度参数')
     top_p = models.FloatField(default=0.9, verbose_name='Top P参数')
