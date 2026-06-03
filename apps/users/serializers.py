@@ -1,6 +1,12 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
+from django.conf import settings
+from cryptography.fernet import Fernet
 from .models import User, UserProfile
+
+
+def _get_fernet():
+    return Fernet(settings.JIRA_TOKEN_ENCRYPT_KEY)
 
 class UserSimpleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -55,6 +61,22 @@ class LoginSerializer(serializers.Serializer):
         return attrs
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    # 只读，返回脱敏值
+    jira_api_token = serializers.SerializerMethodField()
+    # 只写，接收明文 token
+    jira_api_token_input = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
     class Meta:
         model = UserProfile
-        fields = '__all__'
+        fields = ['theme', 'language', 'timezone', 'notifications',
+                  'jira_domain', 'jira_email', 'jira_api_token', 'jira_api_token_input']
+
+    def get_jira_api_token(self, obj):
+        return '***' if obj.jira_api_token else ''
+
+    def update(self, instance, validated_data):
+        token_input = validated_data.pop('jira_api_token_input', None)
+        if token_input:  # 非空才加密覆盖
+            f = _get_fernet()
+            instance.jira_api_token = f.encrypt(token_input.encode()).decode()
+        return super().update(instance, validated_data)

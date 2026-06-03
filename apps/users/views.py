@@ -101,12 +101,17 @@ def logout_view(request):
 
     return Response({'message': '退出成功'})
 
-@api_view(['GET'])
+@api_view(['GET', 'PUT', 'PATCH'])
+@permission_classes([permissions.IsAuthenticated])
 def profile_view(request):
-    if not request.user.is_authenticated:
-        return Response({'error': '未登录'}, status=status.HTTP_401_UNAUTHORIZED)
-    
-    serializer = UserSerializer(request.user)
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    if request.method == 'GET':
+        serializer = UserProfileSerializer(profile)
+        return Response(serializer.data)
+    partial = request.method == 'PATCH'
+    serializer = UserProfileSerializer(profile, data=request.data, partial=partial)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
     return Response(serializer.data)
 
 class UserListView(generics.ListCreateAPIView):
