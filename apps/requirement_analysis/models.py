@@ -1,5 +1,7 @@
 from django.db import models
 from django.utils import timezone
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from apps.users.models import User
 from apps.projects.models import Project
 import json
@@ -1284,3 +1286,57 @@ class ScheduledGenerationTask(models.Model):
 
     def __str__(self):
         return f"{self.name} @ {self.scheduled_time}"
+
+
+class JiraIssueLink(models.Model):
+    """记录已导入的 Jira Issue 及其与 TestHub 版本的关联"""
+    issue_key        = models.CharField(max_length=64, verbose_name='Issue Key')
+    issue_url        = models.URLField(verbose_name='Issue URL')
+    issue_summary    = models.CharField(max_length=500, verbose_name='Issue 标题')
+    jira_domain      = models.CharField(max_length=255, verbose_name='Jira 域名')
+    jira_fix_version = models.CharField(max_length=255, blank=True, default='',
+                                        verbose_name='Jira Fix Version')
+    version          = models.ForeignKey('versions.Version', null=True, blank=True,
+                                         on_delete=models.SET_NULL,
+                                         related_name='jira_issue_links',
+                                         verbose_name='关联版本')
+    project          = models.ForeignKey('projects.Project', null=True, blank=True,
+                                          on_delete=models.SET_NULL,
+                                          related_name='jira_issue_links',
+                                          verbose_name='关联项目')
+    created_by       = models.ForeignKey(User, null=True,
+                                          on_delete=models.SET_NULL,
+                                          related_name='created_jira_links')
+    created_at       = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('issue_key', 'jira_domain')
+        verbose_name = 'Jira Issue 关联'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.issue_key}: {self.issue_summary[:50]}'
+
+
+class JiraIssueCaseLink(models.Model):
+    """用例与 Jira Issue 的关联（支持 AI 生成用例和手工用例）"""
+    LINK_AUTO   = 'auto'
+    LINK_MANUAL = 'manual'
+    LINK_CHOICES = [(LINK_AUTO, '自动关联'), (LINK_MANUAL, '手动关联')]
+
+    jira_issue   = models.ForeignKey(JiraIssueLink, on_delete=models.CASCADE,
+                                      related_name='case_links')
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id    = models.PositiveIntegerField()
+    case         = GenericForeignKey('content_type', 'object_id')
+    link_type    = models.CharField(max_length=16, choices=LINK_CHOICES,
+                                     default=LINK_MANUAL)
+    created_by   = models.ForeignKey(User, null=True,
+                                      on_delete=models.SET_NULL,
+                                      related_name='created_case_links')
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('jira_issue', 'content_type', 'object_id')
+        verbose_name = 'Jira Issue 用例关联'
+        ordering = ['-created_at']
