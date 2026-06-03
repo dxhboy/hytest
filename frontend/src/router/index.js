@@ -175,6 +175,11 @@ const routes = [
           import('@/views/requirement-analysis/ScheduledGenerationTasks.vue'),
       },
       {
+        path: 'jira-import',
+        name: 'JiraImport',
+        component: () => import('@/views/requirement-analysis/JiraImport.vue'),
+      },
+      {
         path: "profile",
         name: "Profile",
         component: () => import("@/views/profile/UserProfile.vue"),
