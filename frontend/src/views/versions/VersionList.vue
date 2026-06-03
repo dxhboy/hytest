@@ -156,13 +156,16 @@
         </el-table-column>
         <el-table-column
           :label="$t('project.actions')"
-          width="150"
+          width="220"
           fixed="right"
         >
           <template #default="{ row }">
             <el-button size="small" @click="editVersion(row)">{{
               $t("common.edit")
             }}</el-button>
+            <el-button size="small" type="primary" plain @click="openJiraDialog(row)">
+              Jira
+            </el-button>
             <el-button size="small" type="danger" @click="deleteVersion(row)">{{
               $t("common.delete")
             }}</el-button>
@@ -180,6 +183,49 @@
         />
       </div>
     </div>
+
+    <!-- Jira 需求对话框 -->
+    <el-dialog
+      v-model="jiraDialogVisible"
+      title="关联 Jira 需求"
+      width="800px"
+      :close-on-click-modal="false"
+    >
+      <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center">
+        <span>该版本关联的 Jira Issues</span>
+        <el-button type="primary" size="small" @click="loadRecommend(currentJiraVersion?.id)" :loading="recommending">
+          推荐回归用例
+        </el-button>
+      </div>
+
+      <el-table :data="jiraIssues" v-loading="loadingIssues" size="small">
+        <el-table-column prop="issue_key" label="Issue Key" width="120" />
+        <el-table-column prop="issue_summary" label="标题" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="jira_fix_version" label="Fix Version" width="120" />
+        <el-table-column prop="case_count" label="关联用例数" width="100" />
+      </el-table>
+
+      <el-drawer v-model="showRecommend" title="推荐回归用例" size="50%">
+        <div style="padding: 16px">
+          <p>共 {{ recommendResults.length }} 条推荐用例（已去重）</p>
+          <el-table :data="recommendResults" size="small">
+            <el-table-column prop="source_issue" label="来源 Issue" width="120" />
+            <el-table-column prop="title" label="用例标题" min-width="200" />
+            <el-table-column prop="case_type" label="类型" width="80">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.case_type === 'testcasegenerationtask' ? 'success' : 'info'">
+                  {{ row.case_type === 'testcasegenerationtask' ? 'AI生成' : '手工' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </el-drawer>
+
+      <template #footer>
+        <el-button @click="jiraDialogVisible = false">{{ $t('common.cancel') }}</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 版本表单对话框 -->
     <el-dialog
@@ -252,6 +298,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Search, Delete } from "@element-plus/icons-vue";
 import api from "@/utils/api";
 import dayjs from "dayjs";
+import { getJiraIssues, recommendCasesByVersion } from "@/api/jira";
 
 const { t } = useI18n();
 const loading = ref(false);
@@ -483,6 +530,47 @@ const resetVersionForm = () => {
   versionForm.project_ids = [];
   versionForm.is_baseline = false;
   editingVersionId.value = null;
+};
+
+// Jira 需求相关
+const jiraDialogVisible = ref(false);
+const currentJiraVersion = ref(null);
+const jiraIssues = ref([]);
+const loadingIssues = ref(false);
+const recommending = ref(false);
+const recommendResults = ref([]);
+const showRecommend = ref(false);
+
+const openJiraDialog = async (version) => {
+  currentJiraVersion.value = version;
+  jiraDialogVisible.value = true;
+  await loadJiraIssues(version.id);
+};
+
+const loadJiraIssues = async (versionId) => {
+  loadingIssues.value = true;
+  try {
+    const res = await getJiraIssues({ version_id: versionId });
+    jiraIssues.value = res.data.results || res.data;
+  } catch {
+    ElMessage.error("加载 Jira Issues 失败");
+  } finally {
+    loadingIssues.value = false;
+  }
+};
+
+const loadRecommend = async (versionId) => {
+  if (!versionId) return;
+  recommending.value = true;
+  try {
+    const res = await recommendCasesByVersion(versionId);
+    recommendResults.value = res.data.results || res.data;
+    showRecommend.value = true;
+  } catch {
+    ElMessage.error("加载推荐用例失败");
+  } finally {
+    recommending.value = false;
+  }
 };
 
 const formatDate = (dateString) => {
