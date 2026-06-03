@@ -467,3 +467,9 @@ SIMPLEUI_ICON = {
 
 # 开发环境，暂时禁用迁移历史检查
 # SILENCED_SYSTEM_CHECKS = ['django.db.migrations.InconsistentMigrationHistory']
+
+import base64
+import hashlib as _hashlib
+# 从 SECRET_KEY 派生 32 字节 Fernet 密钥
+_jira_raw = _hashlib.sha256(SECRET_KEY.encode()).digest()
+JIRA_TOKEN_ENCRYPT_KEY = base64.urlsafe_b64encode(_jira_raw)
