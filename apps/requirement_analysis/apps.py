@@ -7,6 +7,8 @@ class RequirementAnalysisConfig(AppConfig):
     verbose_name = '需求分析'
 
     def ready(self):
+        import apps.requirement_analysis.signals  # noqa: F401
+
         import sys
         # Don't start scheduler during test runs
         if 'test' in sys.argv:
