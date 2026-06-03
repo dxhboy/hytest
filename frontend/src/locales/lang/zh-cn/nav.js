@@ -51,6 +51,7 @@ export default {
 
     // AI用例生成（定时任务）
     scheduledGenerationTasks: "定时用例生成",
+    jiraImport: "Jira 需求导入",
 
     // 配置中心
     aiCaseGenerationConfig: "AI用例生成配置",

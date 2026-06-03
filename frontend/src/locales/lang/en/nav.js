@@ -51,6 +51,7 @@ export default {
 
     // AI Generation (Scheduled Tasks)
     scheduledGenerationTasks: "Scheduled Generation",
+    jiraImport: "Jira Import",
 
     // Configuration Center
     aiCaseGenerationConfig: "AI Test Case Config",

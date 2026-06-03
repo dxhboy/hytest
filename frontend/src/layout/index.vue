@@ -29,6 +29,9 @@
               <el-menu-item index="/ai-generation/scheduled-generation">{{
                 $t("menu.scheduledGenerationTasks")
               }}</el-menu-item>
+              <el-menu-item index="/ai-generation/jira-import">{{
+                $t("menu.jiraImport")
+              }}</el-menu-item>
             </el-sub-menu>
             <el-menu-item index="/ai-generation/projects">
               <el-icon><Folder /></el-icon>
@@ -321,6 +324,7 @@ import {
   Cpu,
   ArrowDown,
   FolderOpened,
+  Connection,
 } from "@element-plus/icons-vue";
 import logoSvg from "@/assets/images/logo.svg";
 import logoHomePng from "@/assets/images/logo_home.png";
