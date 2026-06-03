@@ -24,7 +24,15 @@ class UserProfile(models.Model):
     language = models.CharField(max_length=10, default='zh-cn', verbose_name='语言')
     timezone = models.CharField(max_length=50, default='Asia/Shanghai', verbose_name='时区')
     notifications = models.JSONField(default=dict, verbose_name='通知设置')
-    
+
+    # Jira Cloud 集成凭据
+    jira_domain = models.CharField(max_length=255, blank=True, default='',
+                                   verbose_name='Jira 域名')
+    jira_email = models.CharField(max_length=255, blank=True, default='',
+                                  verbose_name='Jira 邮箱')
+    jira_api_token = models.CharField(max_length=512, blank=True, default='',
+                                      verbose_name='Jira API Token（加密）')
+
     class Meta:
         db_table = 'user_profiles'
         verbose_name = '用户配置'
