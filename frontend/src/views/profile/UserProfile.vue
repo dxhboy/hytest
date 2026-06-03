@@ -51,15 +51,98 @@
             </el-form-item>
           </el-form>
         </el-tab-pane>
+
+        <el-tab-pane :label="$t('requirementAnalysis.jira.tabTitle')" name="jira">
+          <el-form :model="jiraForm" label-width="120px" style="max-width: 480px; margin-top: 16px">
+            <el-form-item :label="$t('requirementAnalysis.jira.domain')">
+              <el-input v-model="jiraForm.jira_domain"
+                        :placeholder="$t('requirementAnalysis.jira.domainPlaceholder')" />
+            </el-form-item>
+            <el-form-item :label="$t('requirementAnalysis.jira.email')">
+              <el-input v-model="jiraForm.jira_email"
+                        :placeholder="$t('requirementAnalysis.jira.emailPlaceholder')" />
+            </el-form-item>
+            <el-form-item :label="$t('requirementAnalysis.jira.apiToken')">
+              <el-input v-model="jiraForm.jira_api_token" type="password" show-password
+                        :placeholder="$t('requirementAnalysis.jira.apiTokenPlaceholder')" />
+              <div style="font-size:12px; color:#909399; margin-top:4px">
+                {{ $t('requirementAnalysis.jira.tokenGuide') }}
+              </div>
+            </el-form-item>
+            <el-form-item>
+              <el-button @click="testJiraConnection" :loading="jiraTesting">
+                {{ $t('requirementAnalysis.jira.testConnection') }}
+              </el-button>
+              <el-button type="primary" @click="saveJiraConfig" :loading="jiraSaving">
+                {{ $t('requirementAnalysis.jira.save') }}
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
       </el-tabs>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
+import { ElMessage } from "element-plus";
 import { useUserStore } from "@/stores/user";
+import request from "@/utils/api";
+import { validateJiraConnection } from "@/api/jira";
 
+const { t } = useI18n();
 const userStore = useUserStore();
 const activeTab = ref("basic");
+
+// Jira 配置
+const jiraForm = ref({ jira_domain: '', jira_email: '', jira_api_token: '' });
+const jiraTesting = ref(false);
+const jiraSaving = ref(false);
+
+const loadJiraConfig = async () => {
+  try {
+    const res = await request({ url: '/users/profile/', method: 'get' });
+    jiraForm.value.jira_domain = res.data.jira_domain || '';
+    jiraForm.value.jira_email = res.data.jira_email || '';
+  } catch {}
+};
+
+const testJiraConnection = async () => {
+  jiraTesting.value = true;
+  try {
+    await validateJiraConnection();
+    ElMessage.success(t('requirementAnalysis.jira.connectionSuccess'));
+  } catch {
+    ElMessage.error(t('requirementAnalysis.jira.connectionFailed'));
+  } finally {
+    jiraTesting.value = false;
+  }
+};
+
+const saveJiraConfig = async () => {
+  jiraSaving.value = true;
+  try {
+    await request({
+      url: '/users/profile/',
+      method: 'patch',
+      data: {
+        jira_domain: jiraForm.value.jira_domain,
+        jira_email: jiraForm.value.jira_email,
+        jira_api_token_input: jiraForm.value.jira_api_token,
+      }
+    });
+    ElMessage.success(t('requirementAnalysis.jira.saveSuccess'));
+    jiraForm.value.jira_api_token = '';
+  } catch {
+    ElMessage.error(t('requirementAnalysis.jira.saveFailed'));
+  } finally {
+    jiraSaving.value = false;
+  }
+};
+
+onMounted(() => {
+  loadJiraConfig();
+});
 </script>
