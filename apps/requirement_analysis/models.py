@@ -456,8 +456,8 @@ class AIModelService:
             skill = ProjectSkill.objects.filter(project_id=task.project_id).first()
             if skill and skill.content and skill.content.strip():
                 extra_system = "\n\n## 项目测试规范\n" + skill.content
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_build_knowledge_context: skill lookup failed: %s", e)
 
         try:
             chunks = KnowledgeDocument.search(
@@ -467,8 +467,8 @@ class AIModelService:
             )
             if chunks:
                 extra_user = "## 参考知识库\n" + "\n---\n".join(chunks) + "\n\n"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("_build_knowledge_context: knowledge search failed: %s", e)
 
         return extra_system, extra_user
 

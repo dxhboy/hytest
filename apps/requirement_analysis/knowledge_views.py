@@ -21,6 +21,10 @@ def knowledge_document_list(request):
     project_id = request.query_params.get('project_id')
     if not project_id:
         return Response({'error': 'project_id 参数必填'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        project_id = int(project_id)
+    except (ValueError, TypeError):
+        return Response({'error': 'project_id 必须为整数'}, status=status.HTTP_400_BAD_REQUEST)
 
     docs = KnowledgeDocument.objects.filter(project_id=project_id).values(
         'id', 'name', 'file_size', 'status', 'error_msg', 'created_at'
@@ -74,7 +78,7 @@ def knowledge_document_upload(request):
 @permission_classes([IsAuthenticated])
 def knowledge_document_delete(request, doc_id):
     """DELETE /knowledge/documents/<id>/ — 删除文档"""
-    doc = get_object_or_404(KnowledgeDocument, id=doc_id)
+    doc = get_object_or_404(KnowledgeDocument, id=doc_id, created_by=request.user)
     if doc.file and os.path.exists(doc.file.path):
         os.remove(doc.file.path)
     doc.delete()
@@ -88,6 +92,10 @@ def project_skill_get(request):
     project_id = request.query_params.get('project_id')
     if not project_id:
         return Response({'error': 'project_id 必填'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        project_id = int(project_id)
+    except (ValueError, TypeError):
+        return Response({'error': 'project_id 必须为整数'}, status=status.HTTP_400_BAD_REQUEST)
 
     skill = ProjectSkill.objects.filter(project_id=project_id).first()
     return Response({
