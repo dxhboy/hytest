@@ -143,8 +143,8 @@ const activeTimers = []
 
 onMounted(async () => {
   try {
-    const res = await request({ url: '/projects/', method: 'get' })
-    projects.value = res.results || res
+    const res = await request({ url: '/projects/list/', method: 'get' })
+    projects.value = res.results || []
   } catch (e) {
     // 静默失败，projects 为空
   }
