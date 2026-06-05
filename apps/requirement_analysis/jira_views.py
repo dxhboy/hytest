@@ -143,19 +143,6 @@ def jira_import(request):
     writer_config = _get_ai_config(data.get('writer_model_config_id'), 'writer')
     reviewer_config = _get_ai_config(data.get('reviewer_model_config_id'), 'reviewer')
 
-    task = TestCaseGenerationTask.objects.create(
-        task_id=f'jira-{uuid.uuid4().hex[:12]}',
-        title='Jira 导入: ' + ', '.join(m['key'] for m in issue_metas[:3]) +
-              (f' 等{len(issue_metas)}个 Issue' if len(issue_metas) > 3 else ''),
-        requirement_text=requirement_text,
-        status='pending',
-        writer_model_config=writer_config,
-        reviewer_model_config=reviewer_config,
-        created_by=request.user,
-    )
-
-    _trigger_task_generation(task)
-
     from apps.users.models import UserProfile
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
     version = None
@@ -166,6 +153,20 @@ def jira_import(request):
     if data.get('project_id'):
         from apps.projects.models import Project
         project = Project.objects.filter(id=data['project_id']).first()
+
+    task = TestCaseGenerationTask.objects.create(
+        task_id=f'jira-{uuid.uuid4().hex[:12]}',
+        title='Jira 导入: ' + ', '.join(m['key'] for m in issue_metas[:3]) +
+              (f' 等{len(issue_metas)}个 Issue' if len(issue_metas) > 3 else ''),
+        requirement_text=requirement_text,
+        status='pending',
+        writer_model_config=writer_config,
+        reviewer_model_config=reviewer_config,
+        created_by=request.user,
+        project=project,
+    )
+
+    _trigger_task_generation(task)
 
     for meta in issue_metas:
         JiraIssueLink.objects.update_or_create(
