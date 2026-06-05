@@ -111,7 +111,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import {
@@ -139,6 +139,7 @@ const skillContent = ref('')
 const skillSaving = ref(false)
 const skillSavedAt = ref('')
 const showPreview = ref(false)
+const activeTimers = []
 
 onMounted(async () => {
   try {
@@ -214,7 +215,7 @@ function pollDocStatus(docId) {
       const doc = (res.results || []).find(d => d.id === docId)
       if (doc) {
         const idx = documents.value.findIndex(d => d.id === docId)
-        if (idx !== -1) documents.value[idx] = doc
+        if (idx !== -1) Object.assign(documents.value[idx], doc)
         if (doc.status === 'indexed' || doc.status === 'failed') {
           clearInterval(timer)
         }
@@ -223,6 +224,7 @@ function pollDocStatus(docId) {
       clearInterval(timer)
     }
   }, 2000)
+  activeTimers.push(timer)
 }
 
 async function handleDelete(docId) {
@@ -262,6 +264,10 @@ function statusTagType(status) {
 function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1)
 }
+
+onBeforeUnmount(() => {
+  activeTimers.forEach(clearInterval)
+})
 </script>
 
 <style scoped>

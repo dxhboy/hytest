@@ -53,6 +53,7 @@ export default {
   taskDetail: requirementModule.taskDetail,
   configGuide: requirementModule.configGuide,
   scheduledTask: requirementModule.scheduledTask,
+  knowledgeBase: requirementModule.knowledgeBase,
 
   // API Testing Module
   apiTesting: apiTestingModule,
