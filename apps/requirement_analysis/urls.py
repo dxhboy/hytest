@@ -16,6 +16,7 @@ from .views import (
     analyze_text
 )
 from . import jira_views
+from . import knowledge_views
 
 # 创建DRF路由器
 router = DefaultRouter()
@@ -50,4 +51,11 @@ urlpatterns = [
     path('jira/issues/<int:issue_id>/unlink-cases/', jira_views.jira_unlink_cases, name='jira-unlink-cases'),
     path('jira/issues/<int:issue_id>/cases/', jira_views.jira_issue_cases, name='jira-issue-cases'),
     path('jira/recommend/', jira_views.jira_recommend, name='jira-recommend'),
+
+    # 知识库端点
+    path('knowledge/documents/', knowledge_views.knowledge_document_list, name='knowledge-doc-list'),
+    path('knowledge/documents/upload/', knowledge_views.knowledge_document_upload, name='knowledge-doc-upload'),
+    path('knowledge/documents/<int:doc_id>/', knowledge_views.knowledge_document_delete, name='knowledge-doc-delete'),
+    path('knowledge/skill/', knowledge_views.project_skill_get, name='knowledge-skill-get'),
+    path('knowledge/skill/save/', knowledge_views.project_skill_save, name='knowledge-skill-save'),
 ]
