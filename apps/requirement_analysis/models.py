@@ -441,6 +441,38 @@ class AIModelService:
     """AI模型服务类"""
 
     @staticmethod
+    def _build_knowledge_context(task) -> tuple:
+        """
+        根据任务所属项目，检索 Skills 和知识库文档，
+        返回 (extra_system, extra_user) 用于注入提示词。
+        """
+        extra_system = ""
+        extra_user = ""
+
+        if not task.project_id:
+            return extra_system, extra_user
+
+        try:
+            skill = ProjectSkill.objects.filter(project_id=task.project_id).first()
+            if skill and skill.content and skill.content.strip():
+                extra_system = "\n\n## 项目测试规范\n" + skill.content
+        except Exception:
+            pass
+
+        try:
+            chunks = KnowledgeDocument.search(
+                query=task.requirement_text,
+                project_id=task.project_id,
+                top_k=3
+            )
+            if chunks:
+                extra_user = "## 参考知识库\n" + "\n---\n".join(chunks) + "\n\n"
+        except Exception:
+            pass
+
+        return extra_system, extra_user
+
+    @staticmethod
     async def call_openai_compatible_api(
             config: AIModelConfig,
             messages: List[Dict[str, str]],
@@ -694,7 +726,11 @@ class AIModelService:
     @staticmethod
     async def generate_test_cases(task: TestCaseGenerationTask) -> str:
         """生成测试用例"""
-        writer_prompt = task.writer_prompt_config.content
+        from asgiref.sync import sync_to_async
+        extra_system, extra_user = await sync_to_async(
+            AIModelService._build_knowledge_context
+        )(task)
+        writer_prompt = task.writer_prompt_config.content + extra_system
 
         # 构建更明确的用户提示，采用思维链(CoT)引导和细粒度拆分策略
         user_message = (
@@ -721,6 +757,8 @@ class AIModelService:
             rf"   - 示例：应输入 'a&#124;b' 而不是 'a|b' 或 'a\|b'。\n\n"
             f"【需求文档内容】\n{task.requirement_text}"
         )
+        if extra_user:
+            user_message = extra_user + user_message
 
         messages = [
             {"role": "system", "content": writer_prompt},
@@ -785,7 +823,11 @@ class AIModelService:
         Returns:
             str: 完整的测试用例内容
         """
-        writer_prompt = task.writer_prompt_config.content
+        from asgiref.sync import sync_to_async
+        extra_system, extra_user = await sync_to_async(
+            AIModelService._build_knowledge_context
+        )(task)
+        writer_prompt = task.writer_prompt_config.content + extra_system
 
         # 构建用户提示
         user_message = (
@@ -812,6 +854,8 @@ class AIModelService:
             rf"   - 示例：应输入 'a&#124;b' 而不是 'a|b' 或 'a\|b'。\n\n"
             f"【需求文档内容】\n{task.requirement_text}"
         )
+        if extra_user:
+            user_message = extra_user + user_message
 
         messages = [
             {"role": "system", "content": writer_prompt},
