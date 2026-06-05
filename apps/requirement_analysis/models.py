@@ -1359,7 +1359,7 @@ class KnowledgeDocument(models.Model):
         related_name='knowledge_docs', verbose_name='所属项目'
     )
     name = models.CharField(max_length=255, verbose_name='文件名')
-    file = models.FileField(upload_to='knowledge/', verbose_name='文件')
+    file = models.FileField(upload_to='knowledge/%Y/%m/', verbose_name='文件')
     file_size = models.PositiveIntegerField(default=0, verbose_name='文件大小(字节)')
     content_text = models.TextField(blank=True, verbose_name='全文内容')
     chunks = models.JSONField(default=list, verbose_name='段落列表')
@@ -1373,6 +1373,7 @@ class KnowledgeDocument(models.Model):
         related_name='knowledge_docs', verbose_name='上传者'
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='上传时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='最后修改时间')
 
     class Meta:
         ordering = ['-created_at']
@@ -1402,11 +1403,12 @@ class KnowledgeDocument(models.Model):
             results = []
             for doc in docs:
                 if doc.chunks:
-                    results.append("\n".join(doc.chunks[:3]))
+                    results.append("\n".join(str(c) for c in doc.chunks[:3]))
                 elif doc.content_text:
                     results.append(doc.content_text[:500])
             return results
-        except Exception:
+        except Exception as e:
+            logger.warning("KnowledgeDocument.search failed: %s", e)
             return []
 
 
