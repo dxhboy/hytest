@@ -725,7 +725,7 @@ export default {
     uploadSuccess: "Uploaded, indexing in progress",
     uploadFailed: "Upload failed",
     skillsHint: "Write project-specific test standards, constraints, and notes here. These will be automatically appended to the AI prompt when generating test cases.",
-    skillsPlaceholder: "## Test Standards\n\n### General Rules\n- ...",
+    skillsPlaceholder: "## General Rules\nEach feature must cover: normal flow, error flow, and boundary conditions.\n\n## Boundary Rules\n- Numeric fields: cover min-1, min, max, max+1\n- String fields: cover empty, max length, over-length\n\n## Business Constraints\n- (Example) Payment amount must test 0, negative, large value (>999999), decimal precision\n- (Example) Concurrent scenarios are high priority\n\n## Exclusions\n- (Example) Do not generate cases for known bug #xxx\n- (Example) Skip deprecated legacy APIs",
     saveBtn: "Save",
     previewBtn: "Preview",
     saveSuccess: "Saved successfully",
