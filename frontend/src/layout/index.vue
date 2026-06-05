@@ -212,6 +212,10 @@
               <el-icon><FolderOpened /></el-icon>
               <span>{{ $t("menu.projectCenter") }}</span>
             </el-menu-item>
+            <el-menu-item index="/configuration/knowledge-base">
+              <el-icon><Collection /></el-icon>
+              <span>{{ $t("menu.knowledgeBase") }}</span>
+            </el-menu-item>
           </template>
         </el-menu>
       </el-aside>

@@ -141,6 +141,7 @@ export default {
     projectDesc: "项目描述",
     baseUrl: "基础URL",
     owner: "负责人",
+    members: "团队成员",
     startDate: "开始日期",
     endDate: "结束日期",
     selectDate: "选择日期",

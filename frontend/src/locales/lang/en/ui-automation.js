@@ -142,6 +142,7 @@ export default {
     projectDesc: "Description",
     baseUrl: "Base URL",
     owner: "Owner",
+    members: "Team Members",
     startDate: "Start Date",
     endDate: "End Date",
     selectDate: "Select Date",

@@ -63,6 +63,7 @@ export default {
     notificationConfig: "Notification Configuration",
     difyConfig: "Dify Configuration",
     projectCenter: "Project Center",
+    knowledgeBase: "Knowledge Base",
   },
   projectCenter: {
     title: "Project Center",

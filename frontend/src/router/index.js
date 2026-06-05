@@ -410,6 +410,12 @@ const routes = [
             name: "ConfigProjectCenter",
             component: () => import("@/views/configuration/ProjectCenter.vue"),
           },
+          {
+            path: "knowledge-base",
+            name: "ConfigKnowledgeBase",
+            component: () =>
+              import("@/views/configuration/KnowledgeBase.vue"),
+          },
         ],
       },
     ],

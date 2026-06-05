@@ -63,6 +63,7 @@ export default {
     notificationConfig: "通知配置",
     difyConfig: "AI评测师配置",
     projectCenter: "项目管理中心",
+    knowledgeBase: "项目知识库",
   },
   projectCenter: {
     title: "项目管理中心",
