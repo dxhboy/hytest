@@ -1340,3 +1340,91 @@ class JiraIssueCaseLink(models.Model):
         unique_together = ('jira_issue', 'content_type', 'object_id')
         verbose_name = 'Jira Issue 用例关联'
         ordering = ['-created_at']
+
+
+class KnowledgeDocument(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_PROCESSING = 'processing'
+    STATUS_INDEXED = 'indexed'
+    STATUS_FAILED = 'failed'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, '待处理'),
+        (STATUS_PROCESSING, '处理中'),
+        (STATUS_INDEXED, '已索引'),
+        (STATUS_FAILED, '失败'),
+    ]
+
+    project = models.ForeignKey(
+        'projects.Project', on_delete=models.CASCADE,
+        related_name='knowledge_docs', verbose_name='所属项目'
+    )
+    name = models.CharField(max_length=255, verbose_name='文件名')
+    file = models.FileField(upload_to='knowledge/', verbose_name='文件')
+    file_size = models.PositiveIntegerField(default=0, verbose_name='文件大小(字节)')
+    content_text = models.TextField(blank=True, verbose_name='全文内容')
+    chunks = models.JSONField(default=list, verbose_name='段落列表')
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES,
+        default=STATUS_PENDING, verbose_name='状态'
+    )
+    error_msg = models.TextField(blank=True, verbose_name='错误信息')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name='knowledge_docs', verbose_name='上传者'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='上传时间')
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = '知识库文档'
+        verbose_name_plural = '知识库文档'
+
+    def __str__(self):
+        return self.name
+
+    @classmethod
+    def search(cls, query: str, project_id: int, top_k: int = 3) -> list:
+        """BM25 全文检索，返回最相关的 top_k 个文档片段。"""
+        if not query or not query.strip():
+            return []
+        try:
+            docs = list(
+                cls.objects.filter(
+                    project_id=project_id,
+                    status=cls.STATUS_INDEXED
+                ).extra(
+                    where=["MATCH(content_text) AGAINST (%s IN BOOLEAN MODE)"],
+                    params=[query[:200]],
+                    select={'relevance': "MATCH(content_text) AGAINST (%s IN BOOLEAN MODE)"},
+                    select_params=[query[:200]],
+                ).order_by('-relevance')[:top_k]
+            )
+            results = []
+            for doc in docs:
+                if doc.chunks:
+                    results.append("\n".join(doc.chunks[:3]))
+                elif doc.content_text:
+                    results.append(doc.content_text[:500])
+            return results
+        except Exception:
+            return []
+
+
+class ProjectSkill(models.Model):
+    project = models.OneToOneField(
+        'projects.Project', on_delete=models.CASCADE,
+        related_name='skill', verbose_name='所属项目'
+    )
+    content = models.TextField(blank=True, verbose_name='Skills 内容(Markdown)')
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name='project_skills', verbose_name='最后修改者'
+    )
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='最后修改时间')
+
+    class Meta:
+        verbose_name = '项目 Skills'
+        verbose_name_plural = '项目 Skills'
+
+    def __str__(self):
+        return f"{self.project} Skills"
