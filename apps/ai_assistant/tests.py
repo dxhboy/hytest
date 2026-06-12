@@ -29,7 +29,13 @@ class AssistantSessionModelTest(TestCase):
         self.assertEqual(session.messages.count(), 1)
 
     def test_session_ordering_by_updated(self):
+        from django.utils import timezone
+        from datetime import timedelta
         s1 = AssistantSession.objects.create(user=self.user, title='s1')
         s2 = AssistantSession.objects.create(user=self.user, title='s2')
+        # 强制 s2 的 updated_at 比 s1 更新，避免时序竞争
+        AssistantSession.objects.filter(pk=s2.pk).update(
+            updated_at=timezone.now() + timedelta(seconds=1)
+        )
         sessions = list(AssistantSession.objects.filter(user=self.user))
-        self.assertEqual(sessions[0].id, s2.id)
+        self.assertEqual(sessions[0].pk, s2.pk)

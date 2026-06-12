@@ -9,6 +9,7 @@ class AssistantSession(models.Model):
     title = models.CharField(max_length=100, default='新会话')
     context_module = models.CharField(max_length=50, blank=True)
     context_page = models.CharField(max_length=100, blank=True)
+    # 仅用于 AI system prompt 注入上下文，不建立 FK 以避免跨模块强耦合
     context_project_id = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -37,3 +38,6 @@ class AssistantMessage(models.Model):
 
     class Meta:
         ordering = ['created_at']
+
+    def __str__(self):
+        return f'[{self.role}] {self.content[:30]}'
