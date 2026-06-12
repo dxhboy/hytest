@@ -61,7 +61,10 @@ def list_ui_elements(user, context: dict, project_id: int = None, keyword: str =
     """列出元素库。"""
     from apps.ui_automation.models import Element
     limit = min(limit, 50)
-    qs = Element.objects.all()
+    # 只返回用户所在项目的元素（通过 project 的成员关系或负责人过滤）
+    qs = Element.objects.filter(
+        db_models.Q(project__members=user) | db_models.Q(project__owner=user)
+    ).distinct()
     pid = project_id or (context.get('project_id') if context else None)
     if pid:
         qs = qs.filter(project_id=pid)

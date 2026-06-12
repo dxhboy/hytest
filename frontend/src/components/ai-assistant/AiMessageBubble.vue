@@ -27,11 +27,21 @@ const toolNames = computed(() =>
 
 const renderedContent = computed(() => {
   let text = props.msg.content || ''
-  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
-    `<pre class="code-block"><code>${escapeHtml(code.trim())}</code></pre>`
-  )
-  text = text.replace(/`([^`]+)`/g, (_, code) => `<code class="inline-code">${escapeHtml(code)}</code>`)
+  const codeBlocks = []
+  // 先提取代码块，用占位符替换，避免对其内容做额外处理
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const idx = codeBlocks.length
+    codeBlocks.push(`<pre class="code-block"><code>${escapeHtml(code.trim())}</code></pre>`)
+    return `\x00CODEBLOCK${idx}\x00`
+  })
+  // 对剩余文本全量转义（防止普通文本中的 HTML 注入）
+  text = escapeHtml(text)
+  // 提取行内代码（此时文本已转义，需要还原 ` ` 周围的内容）
+  text = text.replace(/`([^`]+)`/g, (_, code) => `<code class="inline-code">${code}</code>`)
+  // 换行转 <br>
   text = text.replace(/\n/g, '<br />')
+  // 还原代码块占位符
+  text = text.replace(/\x00CODEBLOCK(\d+)\x00/g, (_, i) => codeBlocks[Number(i)])
   return text
 })
 

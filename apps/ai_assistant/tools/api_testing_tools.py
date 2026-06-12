@@ -40,7 +40,13 @@ def create_interface(user, context: dict, name: str, method: str, url: str,
     from apps.api_testing.models import ApiRequest, ApiCollection
     collection = None
     if collection_id:
-        collection = ApiCollection.objects.filter(id=collection_id).first()
+        # 只允许操作用户有权访问的集合（属于其项目）
+        collection = ApiCollection.objects.filter(
+            db_models.Q(project__members=user) | db_models.Q(project__owner=user),
+            id=collection_id,
+        ).first()
+        if not collection:
+            return {'error': f'集合 {collection_id} 不存在或无访问权限'}
     req = ApiRequest.objects.create(
         name=name,
         method=method.upper(),
@@ -51,7 +57,7 @@ def create_interface(user, context: dict, name: str, method: str, url: str,
         params=params or {},
         body=body or {},
         created_by=user,
-        visibility='all',
+        visibility='private',  # 默认私有，用户可手动改为公开
     )
     return {'id': req.id, 'name': req.name, 'method': req.method, 'url': req.url,
             'message': f'接口 "{req.name}" 创建成功'}
