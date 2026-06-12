@@ -71,18 +71,27 @@ def run_tool_loop(messages: list, tools: list, user, context: dict) -> tuple[str
 
     for _ in range(MAX_TOOL_ROUNDS):
         response = call_llm_with_tools(messages, TOOL_DEFINITIONS)
-        choice = response['choices'][0]
+        choices = response.get('choices')
+        if not choices:
+            logger.error('LLM 返回空 choices，响应：%s', response)
+            return '模型返回异常，请稍后重试。', tools_called
+        choice = choices[0]
         msg = choice['message']
         finish_reason = choice.get('finish_reason', '')
 
-        if finish_reason != 'tool_calls':
+        tool_calls = msg.get('tool_calls') or []
+        if finish_reason != 'tool_calls' or not tool_calls:
             return msg.get('content') or '', tools_called
 
         # 执行工具调用
         messages.append(msg)
-        for tc in msg.get('tool_calls', []):
+        for tc in tool_calls:
             name = tc['function']['name']
-            args = json.loads(tc['function']['arguments'])
+            try:
+                args = json.loads(tc['function']['arguments'])
+            except json.JSONDecodeError:
+                logger.warning('Tool %s arguments 不是合法 JSON: %s', name, tc['function'].get('arguments'))
+                args = {}
             tools_called.append(name)
             result = ToolDispatcher.execute(name, args, user, context)
             messages.append({
