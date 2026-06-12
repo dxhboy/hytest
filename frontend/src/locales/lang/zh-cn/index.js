@@ -15,6 +15,7 @@ import configurationModule from "./configuration.js";
 import assistantModule from "./assistant.js";
 import dataFactoryModule from "./data-factory.js";
 import notificationModule from "./notification.js";
+import aiAssistant from "./ai-assistant.js";
 
 export default {
   // 模块化导出
@@ -72,6 +73,9 @@ export default {
 
   // 通知模块
   notification: notificationModule,
+
+  // AI 助手模块
+  ...aiAssistant,
 
   // Element Plus 语言包
   ...elementZhCn,
