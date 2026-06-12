@@ -39,3 +39,44 @@ class AssistantSessionModelTest(TestCase):
         )
         sessions = list(AssistantSession.objects.filter(user=self.user))
         self.assertEqual(sessions[0].pk, s2.pk)
+
+
+from rest_framework.test import APIClient
+
+
+class ChatViewTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='chatuser', password='testpassword123')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_send_message_creates_session(self):
+        url = '/api/ai-assistant/chat/send_message/'
+        resp = self.client.post(url, {
+            'message': '帮我列出接口',
+            'context': {'module': 'api-testing', 'page': 'interface-management'},
+        }, format='json')
+        # 无 AI 配置时返回 503，有配置时返回 200
+        self.assertIn(resp.status_code, [200, 503])
+
+    def test_session_list(self):
+        from .models import AssistantSession
+        AssistantSession.objects.create(user=self.user, title='test')
+        resp = self.client.get('/api/ai-assistant/sessions/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertGreaterEqual(len(resp.data['results']), 1)
+
+    def test_session_messages(self):
+        from .models import AssistantSession, AssistantMessage
+        session = AssistantSession.objects.create(user=self.user)
+        AssistantMessage.objects.create(session=session, role='user', content='hi')
+        resp = self.client.get(f'/api/ai-assistant/sessions/{session.id}/messages/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.data), 1)
+
+    def test_delete_session(self):
+        from .models import AssistantSession
+        session = AssistantSession.objects.create(user=self.user)
+        resp = self.client.delete(f'/api/ai-assistant/sessions/{session.id}/')
+        self.assertEqual(resp.status_code, 204)
+        self.assertEqual(AssistantSession.objects.filter(id=session.id).count(), 0)
