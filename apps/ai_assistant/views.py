@@ -3,6 +3,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from .models import AssistantSession, AssistantMessage
@@ -25,8 +26,13 @@ SYSTEM_PROMPT_TEMPLATE = """你是 TestHub 测试平台的 AI 助手，可以帮
 执行写入或执行类操作前，简要描述你将要做什么。"""
 
 
+class AiChatThrottle(UserRateThrottle):
+    rate = '30/hour'
+
+
 class ChatView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [AiChatThrottle]
 
     def post(self, request):
         ser = SendMessageSerializer(data=request.data)

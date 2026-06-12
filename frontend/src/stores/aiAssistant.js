@@ -32,6 +32,7 @@ export const useAiAssistantStore = defineStore('aiAssistant', () => {
     if (!message.trim()) return
     loading.value = true
     error.value = null
+    toolsInProgress.value = []  // 重置上次的工具调用记录
 
     const userMsg = { role: 'user', content: message, created_at: new Date().toISOString() }
     messages.value.push(userMsg)
@@ -43,7 +44,9 @@ export const useAiAssistantStore = defineStore('aiAssistant', () => {
         context,
       })
       currentSessionId.value = res.session_id
+      // 先设工具调用信息，让 Vue 有机会渲染，再追加消息
       toolsInProgress.value = res.tools_called || []
+      await new Promise(resolve => setTimeout(resolve, 0))
       messages.value.push({
         role: 'assistant',
         content: res.reply,
@@ -59,7 +62,6 @@ export const useAiAssistantStore = defineStore('aiAssistant', () => {
       })
     } finally {
       loading.value = false
-      toolsInProgress.value = []
     }
   }
 
