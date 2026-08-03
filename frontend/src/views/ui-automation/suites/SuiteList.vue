@@ -377,6 +377,30 @@
             }}</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item :label="$t('uiAutomation.execution.executionMode')">
+          <el-radio-group v-model="runConfig.executionMode" @change="onExecutionModeChange">
+            <el-radio value="local">{{ $t('uiAutomation.execution.local') }}</el-radio>
+            <el-radio value="remote">{{ $t('uiAutomation.execution.remote') }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item
+          v-if="runConfig.executionMode === 'remote'"
+          :label="$t('uiAutomation.execution.remoteService')"
+        >
+          <el-select
+            v-model="runConfig.remote_browser_service_id"
+            :placeholder="$t('uiAutomation.execution.selectRemoteService')"
+            style="width: 100%"
+            @change="onRemoteServiceChange"
+          >
+            <el-option
+              v-for="svc in remoteServices"
+              :key="svc.id"
+              :label="`${svc.name} (${svc.service_type_display})`"
+              :value="svc.id"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
@@ -418,6 +442,7 @@ import {
   removeTestCaseFromTestSuite,
   updateTestCaseOrder,
   runTestSuite,
+  getRemoteBrowserServices,
 } from "@/api/ui_automation";
 import { useI18n } from "vue-i18n";
 
@@ -471,8 +496,11 @@ const runConfig = reactive({
   engine: "playwright",
   browser: "chrome",
   headless: false,
+  executionMode: "local",
+  remote_browser_service_id: null,
 });
 const currentRunningSuite = ref(null);
+const remoteServices = ref([]);
 
 // 计算属性 - 过滤后的可用测试用例
 const filteredAvailableTestCases = computed(() => {
@@ -699,6 +727,39 @@ const runSuite = (suite) => {
   showRunDialog.value = true;
 };
 
+// 执行方式切换（本地/远程）
+function onExecutionModeChange(mode) {
+  if (mode === "local") {
+    runConfig.remote_browser_service_id = null;
+  } else {
+    fetchRemoteServices();
+  }
+}
+
+// 加载可用的远程浏览器服务
+async function fetchRemoteServices() {
+  try {
+    const res = await getRemoteBrowserServices({
+      project: projectId.value,
+      is_active: true,
+    });
+    remoteServices.value = res.data?.results || res.data || [];
+  } catch (e) {
+    console.error("Failed to fetch remote services:", e);
+  }
+}
+
+// 选择远程服务后自动锁定对应的执行引擎
+function onRemoteServiceChange(serviceId) {
+  const svc = remoteServices.value.find((s) => s.id === serviceId);
+  if (!svc) return;
+  if (["selenium_grid", "browserstack", "saucelabs"].includes(svc.service_type)) {
+    runConfig.engine = "selenium";
+  } else if (["playwright_remote", "playwright_cdp"].includes(svc.service_type)) {
+    runConfig.engine = "playwright";
+  }
+}
+
 // 确认运行套件
 const confirmRunSuite = async () => {
   running.value = true;
@@ -708,6 +769,10 @@ const confirmRunSuite = async () => {
       engine: runConfig.engine,
       browser: runConfig.browser,
       headless: runConfig.headless,
+      remote_browser_service_id:
+        runConfig.executionMode === "remote"
+          ? runConfig.remote_browser_service_id
+          : null,
     };
 
     const response = await runTestSuite(

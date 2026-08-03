@@ -507,6 +507,31 @@
           }}</el-checkbox>
         </el-form-item>
 
+        <el-form-item :label="$t('uiAutomation.execution.executionMode')">
+          <el-radio-group v-model="taskForm.executionMode" @change="onExecutionModeChange">
+            <el-radio value="local">{{ $t('uiAutomation.execution.local') }}</el-radio>
+            <el-radio value="remote">{{ $t('uiAutomation.execution.remote') }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item
+          v-if="taskForm.executionMode === 'remote'"
+          :label="$t('uiAutomation.execution.remoteService')"
+        >
+          <el-select
+            v-model="taskForm.remote_browser_service_id"
+            :placeholder="$t('uiAutomation.execution.selectRemoteService')"
+            style="width: 100%"
+            @change="onRemoteServiceChange"
+          >
+            <el-option
+              v-for="svc in remoteServices"
+              :key="svc.id"
+              :label="`${svc.name} (${svc.service_type_display})`"
+              :value="svc.id"
+            />
+          </el-select>
+        </el-form-item>
+
         <el-form-item
           :label="$t('uiAutomation.scheduledTask.notificationSettings')"
         >
@@ -609,6 +634,7 @@ import {
   getTestSuites,
   getTestCases,
   getUiUsers,
+  getRemoteBrowserServices,
 } from "@/api/ui_automation.js";
 
 const { t, locale } = useI18n();
@@ -619,6 +645,7 @@ const projects = ref([]);
 const testSuites = ref([]);
 const testCases = ref([]);
 const users = ref([]);
+const remoteServices = ref([]);
 const loading = ref(false);
 const submitting = ref(false);
 const showCreateDialog = ref(false);
@@ -653,6 +680,8 @@ const taskForm = reactive({
   engine: "playwright",
   browser: "chrome",
   headless: false,
+  executionMode: "local",
+  remote_browser_service_id: null,
   notify_on_success: false,
   notify_on_failure: false,
   notification_type: "",
@@ -756,10 +785,48 @@ const onProjectChange = async (projectId) => {
     // 加载测试用例
     const casesResponse = await getTestCases({ project: projectId });
     testCases.value = casesResponse.data.results;
+
+    // 项目变化时同步刷新远程浏览器服务列表
+    if (taskForm.executionMode === "remote") {
+      await fetchRemoteServices();
+    }
   } catch (error) {
     console.error("Load project data failed:", error);
   }
 };
+
+// 执行方式切换（本地/远程）
+function onExecutionModeChange(mode) {
+  if (mode === "local") {
+    taskForm.remote_browser_service_id = null;
+  } else {
+    fetchRemoteServices();
+  }
+}
+
+// 加载可用的远程浏览器服务
+async function fetchRemoteServices() {
+  try {
+    const res = await getRemoteBrowserServices({
+      project: taskForm.project,
+      is_active: true,
+    });
+    remoteServices.value = res.data?.results || res.data || [];
+  } catch (e) {
+    console.error("Failed to fetch remote services:", e);
+  }
+}
+
+// 选择远程服务后自动锁定对应的执行引擎
+function onRemoteServiceChange(serviceId) {
+  const svc = remoteServices.value.find((s) => s.id === serviceId);
+  if (!svc) return;
+  if (["selenium_grid", "browserstack", "saucelabs"].includes(svc.service_type)) {
+    taskForm.engine = "selenium";
+  } else if (["playwright_remote", "playwright_cdp"].includes(svc.service_type)) {
+    taskForm.engine = "playwright";
+  }
+}
 
 // 任务类型变化
 const onTaskTypeChange = () => {
@@ -790,6 +857,8 @@ const resetTaskForm = () => {
     engine: "playwright",
     browser: "chrome",
     headless: false,
+    executionMode: "local",
+    remote_browser_service_id: null,
     notify_on_success: false,
     notify_on_failure: false,
     notification_type: "",
@@ -821,6 +890,10 @@ const submitTaskForm = async () => {
       engine: taskForm.engine,
       browser: taskForm.browser,
       headless: taskForm.headless,
+      remote_browser_service_id:
+        taskForm.executionMode === "remote"
+          ? taskForm.remote_browser_service_id
+          : null,
       notify_on_success: taskForm.notify_on_success,
       notify_on_failure: taskForm.notify_on_failure,
       visibility: taskForm.visibility,
@@ -956,6 +1029,8 @@ const editTask = async (task) => {
     engine: task.engine || "playwright",
     browser: task.browser || "chrome",
     headless: task.headless || false,
+    executionMode: task.remote_browser_service ? "remote" : "local",
+    remote_browser_service_id: task.remote_browser_service || null,
     notify_on_success: task.notify_on_success || false,
     notify_on_failure: task.notify_on_failure || false,
     notification_type: task.notification_type || "",
@@ -966,6 +1041,11 @@ const editTask = async (task) => {
   // 加载项目相关数据
   if (task.project) {
     await onProjectChange(task.project);
+  }
+
+  // 如果是远程执行任务，确保远程服务列表已加载（onProjectChange 未覆盖 project 为空的场景）
+  if (task.remote_browser_service && remoteServices.value.length === 0) {
+    await fetchRemoteServices();
   }
 
   showCreateDialog.value = true;
