@@ -64,6 +64,7 @@ export default {
     difyConfig: "AI评测师配置",
     projectCenter: "项目管理中心",
     knowledgeBase: "项目知识库",
+    remoteBrowserConfig: "远程浏览器服务",
   },
   projectCenter: {
     title: "项目管理中心",

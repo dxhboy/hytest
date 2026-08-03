@@ -416,6 +416,12 @@ const routes = [
             component: () =>
               import("@/views/configuration/KnowledgeBase.vue"),
           },
+          {
+            path: "remote-browser",
+            name: "ConfigRemoteBrowser",
+            component: () =>
+              import("@/views/configuration/RemoteBrowserConfig.vue"),
+          },
         ],
       },
     ],
