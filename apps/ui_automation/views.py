@@ -22,7 +22,7 @@ from .models import (
     TestCase, TestCaseStep, TestCaseExecution, OperationRecord,
     TestCase, TestCaseStep, TestCaseExecution, OperationRecord,
     UiScheduledTask, UiNotificationLog, UiTaskNotificationSetting,
-    AICase, AIExecutionRecord
+    AICase, AIExecutionRecord, RemoteBrowserService
 )
 from .serializers import (
     UiProjectSerializer, UiProjectCreateSerializer, UiProjectUpdateSerializer,
@@ -40,7 +40,8 @@ from .serializers import (
     TestCaseSerializer, TestCaseStepSerializer, TestCaseExecutionSerializer, TestCaseRunSerializer,
     OperationRecordSerializer,
     UiScheduledTaskSerializer, UiNotificationLogSerializer, UiTaskNotificationSettingSerializer,
-    AICaseSerializer, AIExecutionRecordSerializer
+    AICaseSerializer, AIExecutionRecordSerializer,
+    RemoteBrowserServiceSerializer, RemoteBrowserServiceCreateSerializer
 )
 from .operation_logger import log_operation
 
@@ -777,6 +778,16 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
         browser = request.data.get('browser', 'chrome')
         headless = request.data.get('headless', False)
 
+        remote_browser_service_id = request.data.get('remote_browser_service_id', None)
+        remote_service = None
+        if remote_browser_service_id:
+            try:
+                remote_service = RemoteBrowserService.objects.get(
+                    id=remote_browser_service_id, is_active=True
+                )
+            except RemoteBrowserService.DoesNotExist:
+                return Response({'error': '远程浏览器服务不存在或未启用'}, status=400)
+
         # 更新套件执行状态为运行中
         test_suite.execution_status = 'running'
         test_suite.save()
@@ -799,7 +810,8 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
                     engine=engine,
                     browser=browser,
                     headless=headless,
-                    executed_by=request.user
+                    executed_by=request.user,
+                    remote_service=remote_service
                 )
                 executor.run()
 
@@ -861,6 +873,56 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
         suite_name = instance.test_suite.name if instance.test_suite else f"执行记录#{instance.id}"
         log_operation('delete', 'report', instance.id, suite_name, self.request.user)
         instance.delete()
+
+
+class RemoteBrowserServiceViewSet(viewsets.ModelViewSet):
+    """远程浏览器服务配置 CRUD"""
+    serializer_class = RemoteBrowserServiceSerializer
+    filterset_fields = ['project', 'service_type', 'is_active']
+
+    def get_queryset(self):
+        return RemoteBrowserService.objects.all()
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return RemoteBrowserServiceCreateSerializer
+        return RemoteBrowserServiceSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def test_connection(self, request, pk=None):
+        """测试远程浏览器服务连接"""
+        service = self.get_object()
+        try:
+            if service.service_type in ('selenium_grid', 'browserstack', 'saucelabs'):
+                from .browser_factory import BrowserConnectionFactory
+                driver = BrowserConnectionFactory.create_selenium_driver(
+                    browser_type='chrome', headless=True, remote_service=service,
+                )
+                driver.quit()
+            elif service.service_type == 'playwright_remote':
+                import asyncio
+                from playwright.async_api import async_playwright
+                async def _test():
+                    pw = await async_playwright().start()
+                    browser = await pw.chromium.connect(ws_endpoint=service.url)
+                    await browser.close()
+                    await pw.stop()
+                asyncio.run(_test())
+            elif service.service_type == 'playwright_cdp':
+                import asyncio
+                from playwright.async_api import async_playwright
+                async def _test():
+                    pw = await async_playwright().start()
+                    browser = await pw.chromium.connect_over_cdp(endpoint_url=service.url)
+                    await browser.close()
+                    await pw.stop()
+                asyncio.run(_test())
+            return Response({'status': 'success', 'message': '连接成功'})
+        except Exception as e:
+            return Response({'status': 'error', 'message': str(e)}, status=400)
 
 
 class ScreenshotViewSet(viewsets.ModelViewSet):
@@ -1240,6 +1302,17 @@ class TestCaseViewSet(viewsets.ModelViewSet):
             # 获取执行引擎选择，默认使用playwright
             engine_type = request.data.get('engine', 'playwright')
 
+            # 获取远程浏览器服务（可选）
+            remote_browser_service_id = request.data.get('remote_browser_service_id', None)
+            remote_service = None
+            if remote_browser_service_id:
+                try:
+                    remote_service = RemoteBrowserService.objects.get(
+                        id=remote_browser_service_id, is_active=True
+                    )
+                except RemoteBrowserService.DoesNotExist:
+                    return Response({'error': '远程浏览器服务不存在或未启用'}, status=400)
+
             # 创建执行记录
             execution = TestCaseExecution.objects.create(
                 test_case=test_case,
@@ -1250,7 +1323,8 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                 browser=request.data.get('browser', 'chrome'),
                 headless=request.data.get('headless', False),
                 created_by=request.user,
-                started_at=timezone.now()
+                started_at=timezone.now(),
+                remote_browser_service=remote_service
             )
 
             # 根据引擎类型导入对应的执行引擎
@@ -1351,7 +1425,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                     headless = request.data.get('headless', False)
 
                     # 创建Selenium引擎实例
-                    engine = SeleniumTestEngine(browser_type=browser_type, headless=headless)
+                    engine = SeleniumTestEngine(browser_type=browser_type, headless=headless, remote_service=remote_service)
 
                     try:
                         # 启动浏览器
@@ -1556,7 +1630,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                         headless = request.data.get('headless', False)
 
                         # 创建Playwright引擎实例
-                        engine = PlaywrightTestEngine(browser_type=browser_type, headless=headless)
+                        engine = PlaywrightTestEngine(browser_type=browser_type, headless=headless, remote_service=remote_service)
 
                         try:
                             # 启动浏览器
