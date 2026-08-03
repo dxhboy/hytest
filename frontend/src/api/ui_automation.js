@@ -1058,3 +1058,51 @@ export function exportAIExecutionReportPDF(id, params = {}) {
     responseType: "blob",
   });
 }
+
+// ==================== 远程浏览器服务 ====================
+
+export function getRemoteBrowserServices(params) {
+  return request({
+    url: "/ui-automation/remote-browser-services/",
+    method: "get",
+    params,
+  });
+}
+
+export function createRemoteBrowserService(data) {
+  return request({
+    url: "/ui-automation/remote-browser-services/",
+    method: "post",
+    data,
+  });
+}
+
+export function getRemoteBrowserService(id) {
+  return request({
+    url: `/ui-automation/remote-browser-services/${id}/`,
+    method: "get",
+  });
+}
+
+export function updateRemoteBrowserService(id, data) {
+  return request({
+    url: `/ui-automation/remote-browser-services/${id}/`,
+    method: "put",
+    data,
+  });
+}
+
+export function deleteRemoteBrowserService(id) {
+  return request({
+    url: `/ui-automation/remote-browser-services/${id}/`,
+    method: "delete",
+  });
+}
+
+export function testRemoteBrowserConnection(id) {
+  return request({
+    url: `/ui-automation/remote-browser-services/${id}/test_connection/`,
+    method: "post",
+    timeout: 30000,
+  });
+}

@@ -1238,6 +1238,16 @@ export default {
     wait: "Wait",
   },
 
+  // Execution Configuration
+  execution: {
+    executionMode: "Execution Mode",
+    local: "Local",
+    remote: "Remote",
+    remoteService: "Remote Service",
+    selectRemoteService: "Select a remote browser service",
+    noRemoteServices: "No remote browser services available. Add one in Configuration Center first.",
+  },
+
   // Messages
   messages: {
     success: {
