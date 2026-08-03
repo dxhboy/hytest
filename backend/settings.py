@@ -52,6 +52,7 @@ LOCAL_APPS = [
     'apps.ui_automation.apps.UiAutomationConfig',
     'apps.core',
     'apps.data_factory',
+    'apps.ai_assistant',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

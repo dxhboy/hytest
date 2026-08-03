@@ -299,6 +299,7 @@
         </el-main>
       </el-container>
     </el-container>
+    <AiAssistantPanel />
   </div>
 </template>
 
@@ -336,6 +337,7 @@ import {
 } from "@element-plus/icons-vue";
 import logoSvg from "@/assets/images/logo.svg";
 import logoHomePng from "@/assets/images/logo_home.png";
+import AiAssistantPanel from '@/components/ai-assistant/AiAssistantPanel.vue';
 
 const router = useRouter();
 const route = useRoute();
