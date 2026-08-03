@@ -234,6 +234,9 @@ class TestExecutionSerializer(serializers.ModelSerializer):
     test_suite_name = serializers.SerializerMethodField()
     executed_by_name = serializers.SerializerMethodField()
     pass_rate = serializers.SerializerMethodField()
+    remote_browser_service_name = serializers.CharField(
+        source='remote_browser_service.name', read_only=True, default=None
+    )
 
     class Meta:
         model = TestExecution
@@ -562,6 +565,9 @@ class TestCaseExecutionSerializer(serializers.ModelSerializer):
     project_name = serializers.CharField(source='project.name', read_only=True)
     test_suite_name = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    remote_browser_service_name = serializers.CharField(
+        source='remote_browser_service.name', read_only=True, default=None
+    )
 
     class Meta:
         model = TestCaseExecution
@@ -570,7 +576,8 @@ class TestCaseExecutionSerializer(serializers.ModelSerializer):
             'test_suite', 'test_suite_name', 'execution_source', 'status',
             'engine', 'browser', 'headless', 'execution_logs', 'error_message',
             'screenshots', 'execution_time', 'started_at', 'finished_at',
-            'created_by', 'created_by_name', 'created_at'
+            'created_by', 'created_by_name', 'created_at',
+            'remote_browser_service', 'remote_browser_service_name'
         ]
         read_only_fields = ['created_by']
     
@@ -635,6 +642,9 @@ class UiScheduledTaskSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     trigger_type_display = serializers.CharField(source='get_trigger_type_display', read_only=True)
     notification_type_display = serializers.SerializerMethodField()
+    remote_browser_service_name = serializers.CharField(
+        source='remote_browser_service.name', read_only=True, default=None
+    )
 
     class Meta:
         model = UiScheduledTask
@@ -648,7 +658,8 @@ class UiScheduledTaskSerializer(serializers.ModelSerializer):
             'status', 'status_display',
             'last_run_time', 'next_run_time', 'total_runs',
             'successful_runs', 'failed_runs', 'last_result', 'error_message',
-            'created_by', 'created_by_name', 'created_at', 'updated_at', 'visibility'
+            'created_by', 'created_by_name', 'created_at', 'updated_at', 'visibility',
+            'remote_browser_service', 'remote_browser_service_name'
         ]
         read_only_fields = [
             'created_by', 'last_run_time', 'next_run_time', 'total_runs',
