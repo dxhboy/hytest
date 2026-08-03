@@ -1221,6 +1221,16 @@ export default {
     wait: "等待",
   },
 
+  // 执行配置
+  execution: {
+    executionMode: "执行方式",
+    local: "本地执行",
+    remote: "远程执行",
+    remoteService: "远程服务",
+    selectRemoteService: "请选择远程浏览器服务",
+    noRemoteServices: "暂无可用的远程浏览器服务，请先在配置中心添加",
+  },
+
   // 消息提示
   messages: {
     success: {

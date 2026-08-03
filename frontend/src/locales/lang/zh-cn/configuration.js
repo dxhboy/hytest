@@ -211,4 +211,32 @@ export default {
       deleteFailedDetail: "删除失败: {error}",
     },
   },
+
+  // 远程浏览器服务
+  remoteBrowser: {
+    title: "远程浏览器服务",
+    description: "管理远程浏览器连接配置，支持 Selenium Grid、Playwright Remote、云测试平台",
+    addService: "添加服务",
+    editService: "编辑服务",
+    name: "服务名称",
+    serviceType: "服务类型",
+    url: "连接地址",
+    capabilities: "浏览器能力配置",
+    authConfig: "认证配置",
+    username: "用户名",
+    accessKey: "Access Key",
+    isActive: "启用状态",
+    testConnection: "测试连接",
+    testing: "测试中...",
+    testSuccess: "连接成功",
+    testFailed: "连接失败",
+    confirmDelete: "确定删除该远程浏览器服务？",
+    placeholders: {
+      selenium_grid: "http://hub-host:4444/wd/hub",
+      playwright_remote: "ws://remote-host:3000",
+      playwright_cdp: "http://remote-host:9222",
+      browserstack: "https://hub-cloud.browserstack.com/wd/hub",
+      saucelabs: "https://ondemand.saucelabs.com/wd/hub",
+    },
+  },
 };

@@ -223,4 +223,32 @@ export default {
       deleteFailedDetail: "Failed to delete: {error}",
     },
   },
+
+  // Remote Browser Services
+  remoteBrowser: {
+    title: "Remote Browser Services",
+    description: "Manage remote browser connections for Selenium Grid, Playwright Remote, and cloud testing platforms",
+    addService: "Add Service",
+    editService: "Edit Service",
+    name: "Service Name",
+    serviceType: "Service Type",
+    url: "Connection URL",
+    capabilities: "Browser Capabilities",
+    authConfig: "Authentication",
+    username: "Username",
+    accessKey: "Access Key",
+    isActive: "Active",
+    testConnection: "Test Connection",
+    testing: "Testing...",
+    testSuccess: "Connection successful",
+    testFailed: "Connection failed",
+    confirmDelete: "Delete this remote browser service?",
+    placeholders: {
+      selenium_grid: "http://hub-host:4444/wd/hub",
+      playwright_remote: "ws://remote-host:3000",
+      playwright_cdp: "http://remote-host:9222",
+      browserstack: "https://hub-cloud.browserstack.com/wd/hub",
+      saucelabs: "https://ondemand.saucelabs.com/wd/hub",
+    },
+  },
 };
