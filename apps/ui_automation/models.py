@@ -514,6 +514,12 @@ class TestExecution(models.Model):
     error_message = models.TextField(blank=True, verbose_name='错误信息')
     report_url = models.CharField(max_length=500, blank=True, verbose_name='报告URL')
 
+    remote_browser_service = models.ForeignKey(
+        'RemoteBrowserService', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='test_executions',
+        verbose_name='远程浏览器服务'
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
 
     class Meta:
@@ -558,6 +564,44 @@ class TestEnvironment(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class RemoteBrowserService(models.Model):
+    """远程浏览器服务配置"""
+    SERVICE_TYPE_CHOICES = [
+        ('selenium_grid', 'Selenium Grid'),
+        ('playwright_remote', 'Playwright Remote'),
+        ('playwright_cdp', 'Playwright CDP'),
+        ('browserstack', 'BrowserStack'),
+        ('saucelabs', 'Sauce Labs'),
+    ]
+
+    project = models.ForeignKey(
+        UiProject, on_delete=models.CASCADE,
+        related_name='remote_browser_services', verbose_name='所属项目'
+    )
+    name = models.CharField(max_length=100, verbose_name='服务名称')
+    service_type = models.CharField(
+        max_length=30, choices=SERVICE_TYPE_CHOICES, verbose_name='服务类型'
+    )
+    url = models.CharField(max_length=500, verbose_name='连接地址')
+    capabilities = models.JSONField(default=dict, blank=True, verbose_name='浏览器能力配置')
+    auth_config = models.JSONField(default=dict, blank=True, verbose_name='认证配置')
+    is_active = models.BooleanField(default=True, verbose_name='是否启用')
+    created_by = models.ForeignKey(
+        User, on_delete=models.CASCADE, verbose_name='创建者'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'ui_remote_browser_services'
+        verbose_name = '远程浏览器服务'
+        verbose_name_plural = '远程浏览器服务'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.name} ({self.get_service_type_display()})'
 
 
 class Screenshot(models.Model):
@@ -694,6 +738,11 @@ class TestCaseExecution(models.Model):
     started_at = models.DateTimeField(null=True, blank=True, verbose_name='开始时间')
     finished_at = models.DateTimeField(null=True, blank=True, verbose_name='完成时间')
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='test_case_executions', verbose_name='执行人')
+    remote_browser_service = models.ForeignKey(
+        'RemoteBrowserService', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='test_case_executions',
+        verbose_name='远程浏览器服务'
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
 
     class Meta:
@@ -832,6 +881,11 @@ class UiScheduledTask(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='创建者')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    remote_browser_service = models.ForeignKey(
+        'RemoteBrowserService', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='scheduled_tasks',
+        verbose_name='远程浏览器服务'
+    )
 
     class Meta:
         db_table = 'ui_scheduled_tasks'
