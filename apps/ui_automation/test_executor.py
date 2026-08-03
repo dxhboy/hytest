@@ -48,7 +48,8 @@ class TestExecutor:
             browser=self.browser,
             headless=self.headless,
             executed_by=self.executed_by,
-            started_at=timezone.now()
+            started_at=timezone.now(),
+            remote_browser_service=self.remote_service
         )
         return self.execution
 
