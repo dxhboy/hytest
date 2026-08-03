@@ -94,7 +94,8 @@ def _create_local_selenium(browser_type, headless):
         full_error = f"{error_msg}\n\n💡 安装命令（macOS）：{tip}" if tip else error_msg
         raise Exception(full_error)
 
-    if browser_type == 'chrome':
+    if browser_type == 'chrome' or browser_type not in ('firefox', 'edge', 'safari'):
+        # 默认（含未知 browser_type）也使用 Chrome，与显式 'chrome' 分支完全一致
         from selenium.webdriver.chrome.options import Options
         from selenium.webdriver.chrome.service import Service
         from webdriver_manager.chrome import ChromeDriverManager
@@ -206,44 +207,6 @@ def _create_local_selenium(browser_type, headless):
                     f"原始错误: {error_msg}"
                 )
             raise
-
-    else:
-        # 默认使用Chrome
-        from selenium.webdriver.chrome.options import Options
-        from selenium.webdriver.chrome.service import Service
-        from webdriver_manager.chrome import ChromeDriverManager
-
-        options = Options()
-        if headless:
-            options.add_argument('--headless')
-        options.add_argument('--disable-blink-features=AutomationControlled')
-        options.add_argument('--disable-gpu')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--window-size=1920,1080')
-
-        # 禁用自动化特征检测
-        options.add_experimental_option('excludeSwitches', ['enable-automation'])
-        options.add_experimental_option('useAutomationExtension', False)
-
-        # 禁用密码保存和泄露提醒（解决弹框遮挡元素的问题）
-        prefs = {
-            'credentials_enable_service': False,  # 禁用密码保存服务
-            'profile.password_manager_enabled': False,  # 禁用密码管理器
-            'profile.default_content_setting_values.notifications': 2,  # 禁用通知
-            'autofill.profile_enabled': False,  # 禁用自动填充
-            'profile.default_content_setting_values.automatic_downloads': 1,  # 允许自动下载
-        }
-        options.add_experimental_option('prefs', prefs)
-
-        # 禁用密码泄露检查和其他安全警告
-        options.add_argument('--disable-features=PasswordLeakDetection')  # 禁用密码泄露检测
-        options.add_argument('--disable-features=PrivacySandboxSettings4')  # 禁用隐私沙盒
-        options.add_argument('--disable-features=TranslateUI')  # 禁用翻译提示
-        options.add_argument('--disable-infobars')  # 禁用信息栏
-
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=options)
 
     return driver
 
