@@ -170,6 +170,20 @@
           </template>
         </el-table-column>
         <el-table-column
+          :label="$t('uiAutomation.execution.remoteService')"
+          width="160"
+          align="center"
+        >
+          <template #default="{ row }">
+            <el-tag v-if="row.remote_browser_service" type="warning" size="small">
+              {{ row.remote_browser_service_name }}
+            </el-tag>
+            <el-tag v-else type="info" size="small">
+              {{ $t("uiAutomation.execution.local") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
           prop="created_by_name"
           :label="$t('uiAutomation.execution.executor')"
           width="120"
@@ -465,6 +479,37 @@
             }}</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item :label="$t('uiAutomation.execution.executionMode')">
+          <el-radio-group
+            v-model="rerunFormData.executionMode"
+            @change="onRerunExecutionModeChange"
+          >
+            <el-radio value="local">{{
+              $t("uiAutomation.execution.local")
+            }}</el-radio>
+            <el-radio value="remote">{{
+              $t("uiAutomation.execution.remote")
+            }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item
+          v-if="rerunFormData.executionMode === 'remote'"
+          :label="$t('uiAutomation.execution.remoteService')"
+        >
+          <el-select
+            v-model="rerunFormData.remote_browser_service_id"
+            :placeholder="$t('uiAutomation.execution.selectRemoteService')"
+            style="width: 100%"
+            @change="onRerunRemoteServiceChange"
+          >
+            <el-option
+              v-for="svc in remoteServices"
+              :key="svc.id"
+              :label="`${svc.name} (${svc.service_type_display})`"
+              :value="svc.id"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showRerunDialogVisible = false">{{
@@ -489,6 +534,7 @@ import {
   deleteTestCaseExecution,
   batchDeleteTestCaseExecutions,
   runTestCase,
+  getRemoteBrowserServices,
 } from "@/api/ui_automation";
 
 const { t } = useI18n();
@@ -526,7 +572,10 @@ const rerunFormData = reactive({
   engine: "playwright",
   browser: "chrome",
   headless: false,
+  executionMode: "local",
+  remote_browser_service_id: null,
 });
+const remoteServices = ref([]);
 
 // 格式化日期时间
 const formatDateTime = (dateString) => {
@@ -789,13 +838,59 @@ const viewExecutionDetail = (execution) => {
 };
 
 // 显示重跑对话框
-const showRerunDialog = (execution) => {
+const showRerunDialog = async (execution) => {
   rerunFormData.testCaseId = execution.test_case;
   rerunFormData.engine = execution.engine || "playwright";
   rerunFormData.browser = execution.browser || "chrome";
   rerunFormData.headless = execution.headless || false;
+  rerunFormData.executionMode = execution.remote_browser_service
+    ? "remote"
+    : "local";
+  rerunFormData.remote_browser_service_id =
+    execution.remote_browser_service || null;
   showRerunDialogVisible.value = true;
+
+  if (execution.remote_browser_service) {
+    await fetchRemoteServices();
+  }
 };
+
+// 重跑执行方式切换（本地/远程）
+function onRerunExecutionModeChange(mode) {
+  if (mode === "local") {
+    rerunFormData.remote_browser_service_id = null;
+  } else {
+    fetchRemoteServices();
+  }
+}
+
+// 加载可用的远程浏览器服务
+async function fetchRemoteServices() {
+  try {
+    const res = await getRemoteBrowserServices({
+      project: projectId.value,
+      is_active: true,
+    });
+    remoteServices.value = res.data?.results || res.data || [];
+  } catch (e) {
+    console.error("Failed to fetch remote services:", e);
+  }
+}
+
+// 选择远程服务后自动锁定对应的执行引擎
+function onRerunRemoteServiceChange(serviceId) {
+  const svc = remoteServices.value.find((s) => s.id === serviceId);
+  if (!svc) return;
+  if (
+    ["selenium_grid", "browserstack", "saucelabs"].includes(svc.service_type)
+  ) {
+    rerunFormData.engine = "selenium";
+  } else if (
+    ["playwright_remote", "playwright_cdp"].includes(svc.service_type)
+  ) {
+    rerunFormData.engine = "playwright";
+  }
+}
 
 // 执行重跑
 const handleRerun = async () => {
@@ -810,6 +905,10 @@ const handleRerun = async () => {
       engine: rerunFormData.engine,
       browser: rerunFormData.browser,
       headless: rerunFormData.headless,
+      remote_browser_service_id:
+        rerunFormData.executionMode === "remote"
+          ? rerunFormData.remote_browser_service_id
+          : null,
     });
 
     // 无论成功失败，都关闭弹框并刷新列表

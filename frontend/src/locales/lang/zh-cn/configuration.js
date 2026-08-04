@@ -226,6 +226,8 @@ export default {
     username: "用户名",
     accessKey: "Access Key",
     isActive: "启用状态",
+    createdBy: "创建者",
+    actions: "操作",
     testConnection: "测试连接",
     testing: "测试中...",
     testSuccess: "连接成功",
@@ -237,6 +239,13 @@ export default {
       playwright_cdp: "http://remote-host:9222",
       browserstack: "https://hub-cloud.browserstack.com/wd/hub",
       saucelabs: "https://ondemand.saucelabs.com/wd/hub",
+    },
+    rules: {
+      nameRequired: "请输入服务名称",
+      urlRequired: "请输入连接地址",
+    },
+    messages: {
+      invalidCapabilities: "浏览器能力配置格式错误，请输入合法的 JSON",
     },
   },
 };

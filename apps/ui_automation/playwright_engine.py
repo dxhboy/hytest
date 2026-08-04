@@ -16,16 +16,18 @@ logger = logging.getLogger(__name__)
 class PlaywrightTestEngine:
     """Playwright测试执行引擎"""
 
-    def __init__(self, browser_type='chromium', headless=True):
+    def __init__(self, browser_type='chromium', headless=True, remote_service=None):
         """
         初始化测试引擎
 
         Args:
             browser_type: 浏览器类型 (chromium, firefox, webkit)
             headless: 是否无头模式
+            remote_service: RemoteBrowserService 实例，为 None 时使用本地浏览器
         """
         self.browser_type = browser_type
         self.headless = headless
+        self.remote_service = remote_service
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -34,22 +36,14 @@ class PlaywrightTestEngine:
     async def start(self):
         """启动浏览器"""
         try:
+            from .browser_factory import BrowserConnectionFactory
             self.playwright = await async_playwright().start()
 
-            # 根据浏览器类型选择启动方式
-            if self.browser_type == 'chromium':
-                browser_launcher = self.playwright.chromium
-            elif self.browser_type == 'firefox':
-                browser_launcher = self.playwright.firefox
-            elif self.browser_type == 'webkit':
-                browser_launcher = self.playwright.webkit
-            else:
-                browser_launcher = self.playwright.chromium
-
-            # 启动浏览器
-            self.browser = await browser_launcher.launch(
+            self.browser = await BrowserConnectionFactory.create_playwright_browser(
+                playwright_instance=self.playwright,
+                browser_type=self.browser_type,
                 headless=self.headless,
-                args=['--disable-blink-features=AutomationControlled']  # 避免被检测
+                remote_service=self.remote_service,
             )
 
             # 创建浏览器上下文
@@ -61,7 +55,7 @@ class PlaywrightTestEngine:
             # 创建页面
             self.page = await self.context.new_page()
 
-            logger.info(f"浏览器启动成功: {self.browser_type}, headless={self.headless}")
+            logger.info(f"浏览器启动成功: {self.browser_type}, headless={self.headless}, remote={self.remote_service is not None}")
 
         except Exception as e:
             logger.error(f"启动浏览器失败: {str(e)}")

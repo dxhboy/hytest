@@ -64,6 +64,7 @@ export default {
     difyConfig: "Dify Configuration",
     projectCenter: "Project Center",
     knowledgeBase: "Knowledge Base",
+    remoteBrowserConfig: "Remote Browser Services",
   },
   projectCenter: {
     title: "Project Center",

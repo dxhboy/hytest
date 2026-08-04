@@ -418,6 +418,12 @@ const routes = [
               import("@/views/configuration/NotificationConfig.vue"),
           },
           {
+            path: "remote-browser",
+            name: "ConfigRemoteBrowser",
+            component: () =>
+              import("@/views/configuration/RemoteBrowserConfig.vue"),
+          },
+          {
             path: "dify",
             name: "DifyConfig",
             component: () => import("@/views/configuration/DifyConfig.vue"),

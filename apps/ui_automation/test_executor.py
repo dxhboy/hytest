@@ -27,12 +27,13 @@ from .variable_resolver import resolve_variables
 class TestExecutor:
     """测试执行器基类"""
 
-    def __init__(self, test_suite, engine='playwright', browser='chrome', headless=False, executed_by=None):
+    def __init__(self, test_suite, engine='playwright', browser='chrome', headless=False, executed_by=None, remote_service=None):
         self.test_suite = test_suite
         self.engine = engine
         self.browser = browser
         self.headless = headless
         self.executed_by = executed_by
+        self.remote_service = remote_service
         self.execution = None
         self.test_cases = []
         self.results = []
@@ -255,8 +256,13 @@ class TestExecutor:
 
                 # 为每个测试用例启动新的浏览器实例
                 try:
-                    # 选择浏览器
-                    if self.browser == 'firefox':
+                    # 选择浏览器（远程服务优先，否则走本地启动逻辑）
+                    if self.remote_service and self.remote_service.service_type in ('playwright_remote', 'playwright_cdp'):
+                        if self.remote_service.service_type == 'playwright_remote':
+                            browser = p.chromium.connect(ws_endpoint=self.remote_service.url)
+                        else:
+                            browser = p.chromium.connect_over_cdp(endpoint_url=self.remote_service.url)
+                    elif self.browser == 'firefox':
                         browser = p.firefox.launch(headless=self.headless)
                     elif self.browser == 'safari':
                         browser = p.webkit.launch(headless=self.headless)
@@ -1538,187 +1544,13 @@ class TestExecutor:
         self.update_execution_result(status, passed, failed, skipped, duration)
 
     def create_selenium_driver(self):
-        """创建 Selenium WebDriver"""
-        from selenium.webdriver.chrome.service import Service as ChromeService
-        from selenium.webdriver.firefox.service import Service as FirefoxService
-        from selenium.webdriver.edge.service import Service as EdgeService
-        from webdriver_manager.chrome import ChromeDriverManager
-        from webdriver_manager.firefox import GeckoDriverManager
-        from webdriver_manager.microsoft import EdgeChromiumDriverManager
-        from apps.ui_automation.selenium_engine import SeleniumTestEngine
-        import os
-
-        # 配置webdriver_manager使用本地缓存，避免每次下载
-        # 缓存目录：~/.wdm
-        os.environ['WDM_LOG_LEVEL'] = '0'  # 减少日志输出
-        os.environ['WDM_PRINT_FIRST_LINE'] = 'False'  # 不打印首行信息
-
-        # 检查浏览器是否可用
-        is_available, error_msg = SeleniumTestEngine.check_browser_available(self.browser)
-        if not is_available:
-            # 提供安装建议
-            install_tips = {
-                'chrome': 'brew install --cask google-chrome',
-                'firefox': 'brew install --cask firefox',
-                'edge': 'brew install --cask microsoft-edge',
-            }
-            tip = install_tips.get(self.browser, '')
-            full_error = f"{error_msg}\n\n💡 安装命令（macOS）：{tip}" if tip else error_msg
-            raise Exception(full_error)
-
-        if self.browser == 'chrome':
-            options = ChromeOptions()
-            if self.headless:
-                options.add_argument('--headless')
-            options.add_argument('--disable-blink-features=AutomationControlled')
-            options.add_argument('--disable-gpu')
-            options.add_argument('--no-sandbox')
-            options.add_argument('--disable-dev-shm-usage')
-            options.add_argument('--window-size=1920,1080')
-
-            # 禁用自动化特征检测
-            options.add_experimental_option('excludeSwitches', ['enable-automation', 'enable-logging'])
-            options.add_experimental_option('useAutomationExtension', False)
-
-            # 禁用密码保存和泄露提醒（解决弹框遮挡元素的问题）
-            prefs = {
-                'credentials_enable_service': False,  # 禁用密码保存服务
-                'profile.password_manager_enabled': False,  # 禁用密码管理器
-                'profile.default_content_setting_values.notifications': 2,  # 禁用通知
-                'autofill.profile_enabled': False,  # 禁用自动填充
-                'profile.default_content_setting_values.automatic_downloads': 1,  # 允许自动下载
-                'password_manager_leak_detection': False,  # 禁用密码泄露检测（prefs级别）
-                'safebrowsing.enabled': False,  # 禁用安全浏览
-                'safebrowsing.disable_download_protection': True,
-                'intl.accept_languages': 'zh-CN,zh,en-US,en',  # 设置语言
-                'profile.exit_type': 'Normal',  # 避免"Chrome未正常关闭"提示
-            }
-            options.add_experimental_option('prefs', prefs)
-
-            # 禁用密码泄露检查和其他安全警告（更全面的设置）
-            # 将所有 disable-features 合并为一个参数，避免覆盖
-            disabled_features = [
-                'PasswordLeakDetection',
-                'PrivacySandboxSettings4',
-                'TranslateUI',
-                'SavePasswordBubble',
-                'AutofillServerCommunication',
-                'CreditCardSave',
-                'HeaderUI',
-                'AccountConsistency',
-            ]
-            options.add_argument(f'--disable-features={",".join(disabled_features)}')
-
-            options.add_argument('--disable-infobars')  # 禁用信息栏
-            options.add_argument('--disable-save-password-bubble')  # 禁用保存密码气泡
-            options.add_argument('--disable-password-generation')  # 禁用密码生成
-            options.add_argument('--disable-password-manager-reauthentication')  # 禁用密码管理器重新认证
-            options.add_argument('--disable-popup-blocking')  # 禁用弹窗拦截
-            options.add_argument('--disable-notifications')  # 禁用所有通知
-            options.add_argument('--no-default-browser-check')  # 禁用默认浏览器检查
-            options.add_argument('--no-first-run')  # 禁用首次运行界面
-
-            # 针对密码弹窗的额外参数
-            options.add_argument('--password-store=basic')
-            options.add_argument('--use-mock-keychain')
-            options.add_argument('--disable-background-timer-throttling')
-            options.add_argument('--disable-renderer-backgrounding')
-            options.add_argument('--disable-device-discovery-notifications')
-
-            # 使用缓存优先策略
-            service = ChromeService(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=options)
-        elif self.browser == 'firefox':
-            options = FirefoxOptions()
-            if self.headless:
-                options.add_argument('--headless')
-            options.add_argument('--width=1920')
-            options.add_argument('--height=1080')
-
-            # 性能优化：禁用不必要的功能加快启动速度
-            options.set_preference('browser.cache.disk.enable', False)
-            options.set_preference('browser.cache.memory.enable', True)
-            options.set_preference('browser.cache.offline.enable', False)
-            options.set_preference('network.http.use-cache', False)
-            options.set_preference('browser.startup.homepage', 'about:blank')
-            options.set_preference('startup.homepage_welcome_url', 'about:blank')
-            options.set_preference('startup.homepage_welcome_url.additional', 'about:blank')
-            # 禁用自动更新检查
-            options.set_preference('app.update.auto', False)
-            options.set_preference('app.update.enabled', False)
-            # 禁用扩展和插件检查
-            options.set_preference('extensions.update.enabled', False)
-            options.set_preference('extensions.update.autoUpdateDefault', False)
-
-            # 使用缓存优先策略
-            service = FirefoxService(GeckoDriverManager().install())
-            driver = webdriver.Firefox(service=service, options=options)
-        elif self.browser == 'safari':
-            # Safari 不支持 headless 模式
-            # 需要先启用：sudo safaridriver --enable
-            # 并在 Safari 设置 -> 开发菜单中启用"允许远程自动化"
-            try:
-                driver = webdriver.Safari()
-                driver.set_window_size(1920, 1080)
-            except Exception as e:
-                error_msg = str(e)
-                if 'Could not create a session' in error_msg or 'InvalidSessionIdException' in error_msg:
-                    raise Exception(
-                        "Safari 远程自动化未启用。\n\n"
-                        "请按以下步骤配置：\n"
-                        "1. 在终端执行: sudo safaridriver --enable\n"
-                        "2. 打开 Safari → 设置 → 高级 → 勾选'在菜单栏中显示开发菜单'\n"
-                        "3. Safari 菜单栏 → 开发 → 勾选'允许远程自动化'\n\n"
-                        f"原始错误: {error_msg}"
-                    )
-                raise
-        elif self.browser == 'edge':
-            options = EdgeOptions()
-            if self.headless:
-                options.add_argument('--headless')
-            options.add_argument('--disable-gpu')
-            options.add_argument('--no-sandbox')
-            options.add_argument('--disable-dev-shm-usage')
-            options.add_argument('--window-size=1920,1080')
-
-            # 使用缓存优先策略
-            service = EdgeService(EdgeChromiumDriverManager().install())
-            driver = webdriver.Edge(service=service, options=options)
-        else:
-            # 默认使用Chrome
-            options = ChromeOptions()
-            if self.headless:
-                options.add_argument('--headless')
-            options.add_argument('--disable-blink-features=AutomationControlled')
-            options.add_argument('--disable-gpu')
-            options.add_argument('--no-sandbox')
-            options.add_argument('--disable-dev-shm-usage')
-            options.add_argument('--window-size=1920,1080')
-
-            # 禁用自动化特征检测
-            options.add_experimental_option('excludeSwitches', ['enable-automation'])
-            options.add_experimental_option('useAutomationExtension', False)
-
-            # 禁用密码保存和泄露提醒（解决弹框遮挡元素的问题）
-            prefs = {
-                'credentials_enable_service': False,  # 禁用密码保存服务
-                'profile.password_manager_enabled': False,  # 禁用密码管理器
-                'profile.default_content_setting_values.notifications': 2,  # 禁用通知
-                'autofill.profile_enabled': False,  # 禁用自动填充
-                'profile.default_content_setting_values.automatic_downloads': 1,  # 允许自动下载
-            }
-            options.add_experimental_option('prefs', prefs)
-
-            # 禁用密码泄露检查和其他安全警告
-            options.add_argument('--disable-features=PasswordLeakDetection')  # 禁用密码泄露检测
-            options.add_argument('--disable-features=PrivacySandboxSettings4')  # 禁用隐私沙盒
-            options.add_argument('--disable-features=TranslateUI')  # 禁用翻译提示
-            options.add_argument('--disable-infobars')  # 禁用信息栏
-
-            # 使用缓存优先策略
-            service = ChromeService(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=options)
-
+        """创建 Selenium WebDriver（通过浏览器连接工厂，支持本地/远程）"""
+        from .browser_factory import BrowserConnectionFactory
+        driver = BrowserConnectionFactory.create_selenium_driver(
+            browser_type=self.browser,
+            headless=self.headless,
+            remote_service=self.remote_service,
+        )
         return driver
 
     def execute_test_case_selenium_no_db(self, driver, case_data):

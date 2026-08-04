@@ -238,6 +238,8 @@ export default {
     username: "Username",
     accessKey: "Access Key",
     isActive: "Active",
+    createdBy: "Created By",
+    actions: "Actions",
     testConnection: "Test Connection",
     testing: "Testing...",
     testSuccess: "Connection successful",
@@ -249,6 +251,13 @@ export default {
       playwright_cdp: "http://remote-host:9222",
       browserstack: "https://hub-cloud.browserstack.com/wd/hub",
       saucelabs: "https://ondemand.saucelabs.com/wd/hub",
+    },
+    rules: {
+      nameRequired: "Please enter service name",
+      urlRequired: "Please enter connection URL",
+    },
+    messages: {
+      invalidCapabilities: "Invalid browser capabilities JSON format",
     },
   },
 };

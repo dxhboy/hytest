@@ -216,6 +216,10 @@
               <el-icon><Collection /></el-icon>
               <span>{{ $t("menu.knowledgeBase") }}</span>
             </el-menu-item>
+            <el-menu-item index="/configuration/remote-browser">
+              <el-icon><Connection /></el-icon>
+              <span>{{ $t("menu.remoteBrowserConfig") }}</span>
+            </el-menu-item>
           </template>
         </el-menu>
       </el-aside>
@@ -431,6 +435,7 @@ const breadcrumbTitle = computed(() => {
     "/configuration/notification": t("menu.notificationConfig"),
     "/configuration/dify": t("menu.difyConfig"),
     "/configuration/projects": t("menu.projectCenter"),
+    "/configuration/remote-browser": t("menu.remoteBrowserConfig"),
 
     "/profile": t("nav.profile"),
   };
