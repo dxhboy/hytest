@@ -43,6 +43,7 @@ export default {
     scriptList: "脚本列表",
     suiteManagement: "套件管理",
     executionRecords: "执行记录",
+    scriptRecorder: "脚本录制",
 
     // AI智能模式
     aiIntelligentTesting: "AI 智能测试",
@@ -65,6 +66,7 @@ export default {
     projectCenter: "项目管理中心",
     knowledgeBase: "项目知识库",
     remoteBrowserConfig: "远程浏览器服务",
+    projectParameters: "参数管理",
   },
   projectCenter: {
     title: "项目管理中心",

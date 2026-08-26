@@ -43,6 +43,7 @@ export default {
     scriptList: "Script List",
     suiteManagement: "Suite Management",
     executionRecords: "Execution Records",
+    scriptRecorder: "Script Recorder",
 
     // AI Intelligent Mode
     aiIntelligentTesting: "AI Intelligent Testing",
@@ -65,6 +66,7 @@ export default {
     projectCenter: "Project Center",
     knowledgeBase: "Knowledge Base",
     remoteBrowserConfig: "Remote Browser Services",
+    projectParameters: "Parameter Management",
   },
   projectCenter: {
     title: "Project Center",

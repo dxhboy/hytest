@@ -171,6 +171,9 @@ export default {
       deleteSuccess: "Project deleted successfully",
       deleteFailed: "Failed to delete project",
     },
+    loginTestCase: "Login Test Case",
+    loginTestCasePlaceholder: "Select login case (auto-login before execution)",
+    loginTestCaseTip: "Automatically runs this case to login before suite/case execution; skipped if suite already contains it",
   },
 
   // Element Management
@@ -253,6 +256,7 @@ export default {
       css: "CSS Selector: Enter CSS selector, e.g. .class or #id",
       xpath: 'XPath: Enter XPath expression, e.g. //input[@name="username"]',
       other: "For other strategies, enter the corresponding attribute value",
+      param: 'Supports parameter references: use {{paramName}} to reference project parameters, e.g. //div[@id="{{element_id}}"]',
     },
     rules: {
       nameRequired: "Please enter element name",
@@ -322,6 +326,8 @@ export default {
     executionMode: "Execution Mode",
     headedMode: "Headed Mode",
     headlessMode: "Headless Mode",
+    reuseBrowser: "Reuse Browser",
+    reuseBrowserTip: "When enabled, test cases share the same browser without reopening or re-login, suitable for dependent workflows",
     startExecution: "Start Execution",
     rules: {
       nameRequired: "Please enter suite name",
@@ -465,7 +471,7 @@ export default {
     taskInput: "Task Input",
     taskDescription: "Task Description",
     taskPlaceholder:
-      "Describe the task in natural language, e.g.:\n1. Visit https://www.baidu.com\n2. Search 'TestHub'\n3. Click the first search result",
+      "Describe the task in natural language, e.g.:\n1. Visit https://www.baidu.com\n2. Search 'HyTest'\n3. Click the first search result",
     gifRecording: "GIF Recording",
     on: "On",
     off: "Off",
@@ -1124,6 +1130,7 @@ export default {
     switchTabPlaceholder: "Enter index (0,1...) or leave empty for latest",
     insertVariable: "Insert Dynamic Variable",
     referenceDataFactory: "Reference Data Factory",
+    insertParameter: "Insert Project Parameter",
     waitTime: "Wait Time (ms):",
     assertType: "Assert Type:",
     assertTextContains: "Text Contains",
@@ -1157,12 +1164,17 @@ export default {
     failedStep: "Failed Step",
     screenshotTime: "Screenshot Time",
     variableHelper: "Variable Helper (Click to Insert)",
+    parameterHelper: "Project Parameters (Click to Insert)",
+    parameterHelperEmpty:
+      "No parameters configured for this project yet. Add some under Configuration Center > Parameter Management.",
     functionName: "Function",
     description: "Description",
     syntax: "Syntax",
     example: "Example",
     insert: "Insert",
     operation: "Operation",
+    parameterName: "Name",
+    parameterValue: "Current Value",
     loadingImage: "Loading...",
     imageLoadFailed: "Image load failed",
     screenshot: "Screenshot",
@@ -1222,6 +1234,8 @@ export default {
       createFailed: "Failed to save",
       variableInserted: "Variable inserted",
       dataFactorySelected: "Data factory selected: {toolName}",
+      parameterInserted: "Parameter inserted: {name}",
+      selectProjectFirst: "Please select a project first",
     },
   },
 
@@ -1241,11 +1255,40 @@ export default {
   // Execution Configuration
   execution: {
     executionMode: "Execution Mode",
-    local: "Local",
+    local: "Server-side",
     remote: "Remote",
     remoteService: "Remote Service",
     selectRemoteService: "Select a remote browser service",
     noRemoteServices: "No remote browser services available. Add one in Configuration Center first.",
+    remoteHeadlessHint: "For remote execution the browser runs on the remote server; the headed/headless choice here is passed to the remote client, which launches the browser in that mode on demand (Playwright CDP remote services currently support Chromium only. If the remote client hasn't been upgraded to support on-demand launch, this setting may have no effect and depend on the client's fixed startup configuration instead).",
+  },
+
+  // Script Recording
+  recorder: {
+    urlPlaceholder: "Enter target website URL",
+    selectProject: "Select project",
+    startRecording: "Start Recording",
+    stopRecording: "Stop Recording",
+    go: "Go",
+    cancel: "Cancel",
+    confirm: "Confirm",
+    steps: "Recorded Steps",
+    noStepsYet: "Steps will appear here after recording starts",
+    placeholderText: "Select a project and enter URL, then click Start Recording",
+    inputPlaceholder: "Type text content, press Enter to confirm",
+    confirmTitle: "Confirm Recording Results",
+    testCaseName: "Test Case Name",
+    testCaseNamePlaceholder: "Enter test case name",
+    actionType: "Action",
+    elementName: "Element",
+    matchStatus: "Match Status",
+    inputValue: "Input Value",
+    actions: "Actions",
+    delete: "Delete",
+    saveTestCase: "Save Test Case",
+    statusReused: "Matched",
+    statusUpdated: "Updated",
+    statusCreated: "New",
   },
 
   // Messages

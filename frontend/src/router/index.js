@@ -32,6 +32,7 @@ import UiNotificationLogs from "@/views/ui-automation/notification/NotificationL
 import UiAITesting from "@/views/ui-automation/ai/AITesting.vue";
 import UiAICaseList from "@/views/ui-automation/ai/AICaseList.vue";
 import UiAIExecutionRecords from "@/views/ui-automation/ai/AIExecutionRecords.vue";
+import RecorderView from "@/views/ui-automation/recorder/RecorderView.vue";
 
 const routes = [
   {
@@ -332,6 +333,19 @@ const routes = [
         path: "notification-logs",
         name: "UiNotificationLogs",
         component: UiNotificationLogs,
+      },
+      {
+        path: "parameters",
+        name: "UiProjectParameters",
+        component: () =>
+          import("@/views/configuration/ProjectParameters.vue"),
+        meta: { module: 'ui-automation', page: 'parameters' },
+      },
+      {
+        path: "recorder",
+        name: "UiRecorder",
+        component: RecorderView,
+        meta: { module: 'ui-automation', page: 'recorder' },
       },
     ],
   },

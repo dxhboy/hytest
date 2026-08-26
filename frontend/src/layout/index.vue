@@ -4,7 +4,7 @@
       <!-- 侧边栏 -->
       <el-aside width="240px">
         <div class="logo" @click="router.push('/home')" style="cursor: pointer">
-          <img :src="logoImage" alt="TestHub" class="logo-img" />
+          <img :src="logoImage" alt="HyTest" class="logo-img" />
         </div>
         <el-menu
           :default-active="$route.path"
@@ -114,6 +114,10 @@
               <el-icon><Odometer /></el-icon>
               <span>{{ $t("menu.dashboard") }}</span>
             </el-menu-item>
+            <el-menu-item index="/ui-automation/recorder">
+              <el-icon><VideoCamera /></el-icon>
+              <span>{{ $t("menu.scriptRecorder") }}</span>
+            </el-menu-item>
             <el-menu-item index="/ui-automation/projects">
               <el-icon><Folder /></el-icon>
               <span>{{ $t("menu.projectManagement") }}</span>
@@ -126,14 +130,26 @@
               <el-icon><Document /></el-icon>
               <span>{{ $t("menu.caseManagement") }}</span>
             </el-menu-item>
-            <el-menu-item index="/ui-automation/scripts-enhanced">
-              <el-icon><Edit /></el-icon>
-              <span>{{ $t("menu.scriptGeneration") }}</span>
-            </el-menu-item>
-            <el-menu-item index="/ui-automation/scripts">
-              <el-icon><DocumentCopy /></el-icon>
-              <span>{{ $t("menu.scriptList") }}</span>
-            </el-menu-item>
+            <el-tooltip
+              content="脚本模式暂未接入执行引擎，保存的脚本目前无法运行，建议使用「用例管理」的低代码模式"
+              placement="right"
+            >
+              <el-menu-item index="/ui-automation/scripts-enhanced">
+                <el-icon><Edit /></el-icon>
+                <span>{{ $t("menu.scriptGeneration") }}</span>
+                <el-tag size="small" type="warning" effect="plain" style="margin-left: 6px">实验性</el-tag>
+              </el-menu-item>
+            </el-tooltip>
+            <el-tooltip
+              content="脚本模式暂未接入执行引擎，保存的脚本目前无法运行，建议使用「用例管理」的低代码模式"
+              placement="right"
+            >
+              <el-menu-item index="/ui-automation/scripts">
+                <el-icon><DocumentCopy /></el-icon>
+                <span>{{ $t("menu.scriptList") }}</span>
+                <el-tag size="small" type="warning" effect="plain" style="margin-left: 6px">实验性</el-tag>
+              </el-menu-item>
+            </el-tooltip>
             <el-menu-item index="/ui-automation/suites">
               <el-icon><Collection /></el-icon>
               <span>{{ $t("menu.suiteManagement") }}</span>
@@ -153,6 +169,10 @@
             <el-menu-item index="/ui-automation/notification-logs">
               <el-icon><Bell /></el-icon>
               <span>{{ $t("menu.notificationList") }}</span>
+            </el-menu-item>
+            <el-menu-item index="/ui-automation/parameters">
+              <el-icon><Key /></el-icon>
+              <span>{{ $t("menu.projectParameters") }}</span>
             </el-menu-item>
           </template>
 
@@ -334,6 +354,8 @@ import {
   ArrowDown,
   FolderOpened,
   Connection,
+  Key,
+  VideoCamera,
 } from "@element-plus/icons-vue";
 import logoSvg from "@/assets/images/logo.svg";
 import logoHomePng from "@/assets/images/logo_home.png";
@@ -410,6 +432,7 @@ const breadcrumbTitle = computed(() => {
 
     // UI自动化测试
     "/ui-automation/dashboard": t("menu.dashboard"),
+    "/ui-automation/recorder": t("menu.scriptRecorder"),
     "/ui-automation/projects": t("menu.projectManagement"),
     "/ui-automation/elements-enhanced": t("menu.elementManagement"),
     "/ui-automation/test-cases": t("menu.caseManagement"),
@@ -436,6 +459,7 @@ const breadcrumbTitle = computed(() => {
     "/configuration/dify": t("menu.difyConfig"),
     "/configuration/projects": t("menu.projectCenter"),
     "/configuration/remote-browser": t("menu.remoteBrowserConfig"),
+    "/ui-automation/parameters": t("menu.projectParameters"),
 
     "/profile": t("nav.profile"),
   };
