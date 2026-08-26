@@ -18,6 +18,7 @@ else:
                            cast=lambda v: [s.strip() for s in v.split(',')])
 
 DJANGO_APPS = [
+    'daphne',  # 必须在 django.contrib.staticfiles 之前声明（Channels 要求）
     'simpleui',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -28,6 +29,7 @@ DJANGO_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    'channels',
     'rest_framework',
     'rest_framework.authtoken',
     'rest_framework_simplejwt',  # 添加JWT支持
@@ -474,3 +476,11 @@ import hashlib as _hashlib
 # 从 SECRET_KEY 派生 32 字节 Fernet 密钥
 _jira_raw = _hashlib.sha256(SECRET_KEY.encode()).digest()
 JIRA_TOKEN_ENCRYPT_KEY = base64.urlsafe_b64encode(_jira_raw)
+
+# ---------- Django Channels (WebSocket) ----------
+ASGI_APPLICATION = 'backend.asgi.application'
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}

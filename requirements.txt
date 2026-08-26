@@ -21,6 +21,7 @@ cdp-use==1.4.4
 celery==5.3.4
 certifi==2025.7.14
 cffi==1.17.1
+channels>=4.0.0
 chardet==5.2.0
 charset-normalizer==3.4.2
 click==8.2.1
@@ -30,7 +31,8 @@ click-repl==0.3.0
 cloudpickle==3.1.2
 colorama==0.4.6
 croniter==6.0.0
-cryptography==41.0.7
+daphne==4.2.3
+cryptography==46.0.0
 distro==1.9.0
 Django==4.2.7
 django-cors-headers==4.3.1

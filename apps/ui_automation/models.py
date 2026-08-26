@@ -1124,3 +1124,35 @@ class AIExecutionRecord(models.Model):
     def __str__(self):
         return f"{self.case_name} - {self.get_status_display()}"
 
+
+class RecordingSession(models.Model):
+    """录制会话模型 — 管理一次脚本录制的完整生命周期"""
+    STATUS_CHOICES = [
+        ('recording', '录制中'),
+        ('matching', '元素匹配中'),
+        ('confirming', '待确认'),
+        ('saved', '已保存'),
+        ('cancelled', '已取消'),
+    ]
+
+    project = models.ForeignKey(UiProject, on_delete=models.CASCADE, related_name='recording_sessions', verbose_name='所属项目')
+    test_case = models.ForeignKey(TestCase, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='关联测试用例')
+    target_url = models.URLField(verbose_name='录制目标URL')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='recording', verbose_name='会话状态')
+    recorded_steps = models.JSONField(default=list, blank=True, verbose_name='录制的原始步骤数据')
+    match_results = models.JSONField(default=list, blank=True, verbose_name='元素匹配结果')
+    viewport_width = models.IntegerField(default=1280, verbose_name='视口宽度')
+    viewport_height = models.IntegerField(default=720, verbose_name='视口高度')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name='创建人')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name='结束时间')
+
+    class Meta:
+        db_table = 'ui_recording_sessions'
+        verbose_name = '录制会话'
+        verbose_name_plural = '录制会话'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'Recording #{self.id} - {self.target_url} ({self.get_status_display()})'
+
