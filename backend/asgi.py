@@ -10,11 +10,16 @@ django_asgi_app = get_asgi_application()
 
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
+from channels.auth import AuthMiddlewareStack
 from backend.routing import websocket_urlpatterns
 
 application = ProtocolTypeRouter({
     'http': django_asgi_app,
+    # AuthMiddlewareStack 从 session 中解析出 scope['user']，
+    # 供 consumer 在 connect() 中做身份校验，防止未认证客户端连入。
     'websocket': AllowedHostsOriginValidator(
-        URLRouter(websocket_urlpatterns)
+        AuthMiddlewareStack(
+            URLRouter(websocket_urlpatterns)
+        )
     ),
 })

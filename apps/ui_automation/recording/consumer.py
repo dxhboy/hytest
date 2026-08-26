@@ -55,6 +55,16 @@ class RecordingConsumer(AsyncWebsocketConsumer):
             await self.close(code=4004)
             return
 
+        # 身份校验：必须是已登录用户，且必须是该会话的创建者，
+        # 防止任意未认证客户端连入并操控他人的录制会话
+        user = self.scope.get('user')
+        if not user or user.is_anonymous:
+            await self.close(code=4001)
+            return
+        if self.session.created_by_id != user.id:
+            await self.close(code=4003)
+            return
+
         await self.accept()
         await self._send_status('launching')
 

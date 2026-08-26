@@ -49,11 +49,20 @@ class ElementMatcher:
     用法:
         matcher = ElementMatcher(project_id=1, user=request.user)
         results = matcher.match_all(recorded_steps)
+
+    dry_run:
+        默认为 True —— 停止录制时的匹配预览不应直接落库，
+        避免用户取消录制后元素库里已经产生了不可撤销的变更。
+        只有在用户确认保存（confirm_recording）时，才应以
+        dry_run=False 的方式真正应用定位器更新（当前由
+        recording_views._apply_locator_update 独立完成，
+        本类默认保持 dry_run=True 仅用于预览）。
     """
 
-    def __init__(self, project_id: int, user):
+    def __init__(self, project_id: int, user, dry_run: bool = True):
         self.project_id = project_id
         self.user = user
+        self.dry_run = dry_run
         # 预加载该项目的所有元素，避免逐步骤查询
         self._elements = list(
             Element.objects.filter(project_id=project_id)
@@ -184,9 +193,15 @@ class ElementMatcher:
 
     def _apply_update(self, element: Element, new_locators: list[dict]) -> dict:
         """
-        更新元素的定位器。
+        计算元素定位器的更新内容。
         新的最高优先级定位器成为主定位器，其余存入 backup_locators。
         保留 name、description、group 等人工维护字段不变。
+
+        dry_run=True（默认）时仅计算并返回 changes，不写库、不重建索引——
+        供 stop_recording 阶段预览匹配结果，避免用户取消录制后
+        元素库已经产生不可撤销的变更。
+        dry_run=False 时才真正落库（当前调用方未直接使用此路径，
+        confirm_recording 通过独立的 _apply_locator_update 完成落库）。
         """
         if not new_locators:
             return {}
@@ -205,16 +220,23 @@ class ElementMatcher:
         if not strategy_obj:
             # 策略不存在时不更新主定位器，只更新备用
             changes = {'backup_locators': new_locators}
-            element.backup_locators = new_locators
         else:
             changes = {
                 'old_primary': old_primary,
                 'new_primary': new_primary,
                 'new_backups': new_backups,
             }
+
+        if self.dry_run:
+            # 预览模式：只返回变更内容，不修改数据库
+            return changes
+
+        if strategy_obj:
             element.locator_strategy = strategy_obj
             element.locator_value = new_primary['value']
             element.backup_locators = new_backups if new_backups else None
+        else:
+            element.backup_locators = new_locators
 
         element.validation_status = 'VALID'
         element.last_validated = timezone.now()

@@ -21,7 +21,7 @@
           ref="canvasRef"
           :viewport-width="viewportWidth"
           :viewport-height="viewportHeight"
-          @mousedown="sendWs({ type: 'mousedown', ...$event })"
+          @mousedown="handleMouseDown"
           @mousemove="sendWs({ type: 'mousemove', ...$event })"
           @scroll="sendWs({ type: 'scroll', ...$event })"
           @keydown="sendWs({ type: 'keydown', ...$event })"
@@ -67,6 +67,9 @@ const matchResults = ref([])
 const showConfirmDialog = ref(false)
 const viewportWidth = ref(1280)
 const viewportHeight = ref(720)
+// 记录最后一次鼠标按下的坐标（viewport 坐标系），用于在检测到输入框元素时
+// 定位文本输入浮层的弹出位置
+const lastClickCoords = ref({ x: 0, y: 0 })
 
 let ws = null
 
@@ -111,6 +114,10 @@ function handleWsMessage(data) {
     case 'action':
       // 实时追加录制步骤
       recordedSteps.value.push(data.data)
+      // 如果点击的是输入框类元素，弹出文本输入浮层，方便用户输入文本
+      if (data.data.action_type === 'click' && data.data.element_info?.element_type === 'INPUT') {
+        canvasRef.value?.showInput(lastClickCoords.value.x, lastClickCoords.value.y)
+      }
       break
     case 'status':
       // 状态更新（navigating, ready, error）
@@ -142,6 +149,12 @@ async function handleStart({ projectId, targetUrl }) {
   } catch (e) {
     ElMessage.error('启动录制失败: ' + (e.response?.data?.error || e.message))
   }
+}
+
+function handleMouseDown(event) {
+  // 先记录本次点击坐标，供后续 action 消息判断是否需要弹出文本输入浮层
+  lastClickCoords.value = { x: event.x, y: event.y }
+  sendWs({ type: 'mousedown', ...event })
 }
 
 async function handleStop() {

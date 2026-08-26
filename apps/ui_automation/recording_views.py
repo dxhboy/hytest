@@ -130,11 +130,20 @@ def confirm_recording(request, session_id):
         element = None
         match_status = step_data.get('status', '')
 
-        if match_status == 'reused' or match_status == 'updated':
-            # 复用或已更新的元素 — 直接关联
+        if match_status == 'reused':
+            # 复用的元素 — 直接关联，无需变更
             element_id = step_data.get('element_id')
             if element_id:
                 element = Element.objects.filter(id=element_id).first()
+
+        elif match_status == 'updated':
+            # 匹配阶段是 dry_run，只预览了 changes，并未写库。
+            # 用户在此确认保存后，才真正把录制时检测到的定位器更新落库。
+            element_id = step_data.get('element_id')
+            if element_id:
+                element = Element.objects.filter(id=element_id).first()
+                if element and step_data.get('element_info'):
+                    _apply_locator_update(element, step_data['element_info'].get('locators', []))
 
         elif match_status == 'created':
             # 新增元素 — 在此创建
@@ -181,6 +190,34 @@ def cancel_recording(request, session_id):
     session.save()
 
     return Response({'session_id': session.id, 'status': 'cancelled'})
+
+
+def _apply_locator_update(element: Element, new_locators: list) -> dict:
+    """
+    将录制时检测到的定位器更新真正落库（独立于 ElementMatcher，
+    仅在用户点击"确认保存"之后调用，逻辑与
+    ElementMatcher._apply_update 的非 dry_run 分支保持一致）。
+    新的最高优先级定位器成为主定位器，其余存入 backup_locators。
+    """
+    if not new_locators:
+        return {}
+
+    new_primary = new_locators[0]
+    new_backups = new_locators[1:]
+
+    strategy_obj = LocatorStrategy.objects.filter(name=new_primary['strategy']).first()
+    if strategy_obj:
+        element.locator_strategy = strategy_obj
+        element.locator_value = new_primary['value']
+        element.backup_locators = new_backups if new_backups else None
+    else:
+        # 策略不存在时不更新主定位器，只更新备用
+        element.backup_locators = new_locators
+
+    element.validation_status = 'VALID'
+    element.last_validated = timezone.now()
+    element.save()
+    return {'element_id': element.id, 'new_primary': new_primary, 'new_backups': new_backups}
 
 
 def _create_element(project, element_info: dict, page_url: str, user) -> Element:
