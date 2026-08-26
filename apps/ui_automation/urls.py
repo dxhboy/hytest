@@ -12,7 +12,6 @@ from .views import (
     ScriptStepViewSet,
     TestSuiteViewSet,
     TestExecutionViewSet,
-    ScreenshotViewSet,
     TestCaseViewSet,
     TestCaseStepViewSet,
     TestCaseExecutionViewSet,
@@ -22,9 +21,14 @@ from .views import (
     UiNotificationLogViewSet,
     OperationRecordViewSet,
     UiDashboardViewSet,
-    RemoteBrowserServiceViewSet
+    RemoteBrowserServiceViewSet,
+    UiProjectParameterViewSet,
 )
 from .views_config import EnvironmentConfigViewSet, AIIntelligentModeConfigViewSet
+from .recording_views import (
+    start_recording, stop_recording, get_match_results,
+    confirm_recording, cancel_recording,
+)
 
 router = DefaultRouter()
 router.register(r'dashboard', UiDashboardViewSet, basename='dashboard')
@@ -37,7 +41,6 @@ router.register(r'page-objects', PageObjectViewSet)
 router.register(r'steps', ScriptStepViewSet)
 router.register(r'test-suites', TestSuiteViewSet)
 router.register(r'test-executions', TestExecutionViewSet)
-router.register(r'screenshots', ScreenshotViewSet)
 router.register(r'test-cases', TestCaseViewSet)
 router.register(r'test-case-steps', TestCaseStepViewSet)
 router.register(r'test-case-executions', TestCaseExecutionViewSet)
@@ -48,6 +51,7 @@ router.register(r'ai-case-generation', AICaseViewSet, basename='ai-case-generati
 router.register(r'notification-logs', UiNotificationLogViewSet)
 router.register(r'operation-records', OperationRecordViewSet)
 router.register(r'remote-browser-services', RemoteBrowserServiceViewSet, basename='remote-browser-services')
+router.register(r'project-parameters', UiProjectParameterViewSet, basename='project-parameters')
 
 
 # Configuration Center APIs
@@ -56,6 +60,11 @@ router.register(r'config/ai-mode', AIIntelligentModeConfigViewSet, basename='con
 router.register(r'ai-models', AIIntelligentModeConfigViewSet, basename='ai-models')
 
 urlpatterns = [
+    path('recording/start/', start_recording, name='recording-start'),
+    path('recording/<int:session_id>/stop/', stop_recording, name='recording-stop'),
+    path('recording/<int:session_id>/match-results/', get_match_results, name='recording-match-results'),
+    path('recording/<int:session_id>/confirm/', confirm_recording, name='recording-confirm'),
+    path('recording/<int:session_id>/cancel/', cancel_recording, name='recording-cancel'),
     path('', include(router.urls)),
 ]
 
