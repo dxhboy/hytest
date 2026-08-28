@@ -104,6 +104,7 @@ export default {
     visibility: "Visibility",
     visibleAll: "Visible to all",
     visibleSelf: "Only visible to me",
+    more: "More",
   },
 
   // Status
@@ -183,6 +184,7 @@ export default {
     editElement: "Edit Element",
     createElement: "Create Element",
     elementName: "Element Name",
+    ungrouped: "Ungrouped",
     page: "Page",
     locatorStrategy: "Locator Strategy",
     locatorValue: "Locator Value",
@@ -299,6 +301,10 @@ export default {
       insertCode: "Insert element code",
       validatePassed: "Element validation passed",
       validateFailedReason: "Element validation failed",
+      batchDeleteConfirm: "Are you sure to delete the selected {count} elements? This action cannot be undone.",
+      batchDeleteSuccess: "Successfully deleted {count} elements",
+      batchDeleteFailed: "Batch delete failed",
+      noElementSelected: "Please select elements to delete first",
     },
   },
 
@@ -311,13 +317,28 @@ export default {
     suiteName: "Suite Name",
     searchPlaceholder: "Search suite name or description",
     testCaseCount: "Test Cases",
+    scriptCount: "Scripts",
     executionStatus: "Execution Status",
     passedCount: "Passed",
     failedCount: "Failed",
+    suiteItems: "Suite Items",
     testCases: "Test Cases",
+    scripts: "Scripts",
     availableCases: "Available Cases",
     selectedCases: "Selected Cases",
     searchCases: "Search cases",
+    availableScripts: "Available Scripts",
+    selectedScripts: "Selected Scripts",
+    searchScripts: "Search scripts",
+    executionOrder: "Execution Order",
+    executionOrderEmpty: "Add test cases or scripts first, then adjust execution order here",
+    orderNum: "#",
+    itemType: "Type",
+    typeCase: "Case",
+    typeScript: "Script",
+    scriptName: "Script Name",
+    framework: "Framework",
+    language: "Language",
     caseName: "Case Name",
     priority: "Priority",
     runConfig: "Run Test Suite",
@@ -344,10 +365,11 @@ export default {
       deleteConfirm: "Are you sure to delete this test suite?",
       deleteSuccess: "Deleted successfully",
       deleteFailed: "Failed to delete test suite",
-      noCases: "This test suite has no test cases and cannot be executed",
+      noCases: "This test suite has no test cases or scripts and cannot be executed",
       startSuccess: "Test suite execution started",
       executeFailed: "Failed to execute test suite",
       caseAdded: "This case has already been added",
+      scriptAdded: "This script has already been added",
       executionComplete: "Test suite execution completed",
       allPassed: "All passed",
       partialFailed: "Partial failed",
@@ -388,6 +410,12 @@ export default {
     screenshot: "Screenshot",
     rerunTitle: "Rerun Test Case",
     confirmRerun: "Confirm Rerun",
+    local: "Server-side",
+    remote: "Remote",
+    remoteService: "Remote Service",
+    selectRemoteService: "Select a remote browser service",
+    noRemoteServices: "No remote browser services available. Add one in Configuration Center first.",
+    remoteHeadlessHint: "For remote execution the browser runs on the remote server; the headed/headless choice here is passed to the remote client, which launches the browser in that mode on demand (Playwright CDP remote services currently support Chromium only. If the remote client hasn't been upgraded to support on-demand launch, this setting may have no effect and depend on the client's fixed startup configuration instead).",
     messages: {
       loadFailed: "Failed to load execution records",
       deleteConfirm: "Are you sure to delete this execution record?",
@@ -956,6 +984,14 @@ export default {
       validatePassed: "Element validation passed",
       validateFailed: "Element validation failed",
       switchLanguage: "Switched to {lang} language",
+      inputName: "Please enter a script name",
+    },
+    saveDialog: {
+      title: "Save Script",
+      scriptName: "Script Name",
+      namePlaceholder: "Enter script name or use auto-generated name",
+      autoNameTip:
+        "A name has been auto-generated based on project, language, and framework. You can modify it.",
     },
   },
 
@@ -1038,6 +1074,8 @@ export default {
   // Script Management
   script: {
     title: "Script List",
+    experimentalTitle: "Script mode is experimental and not yet connected to the execution engine",
+    experimentalDescription: "Scripts saved here cannot be run in suites or scheduled tasks. For executable test cases, please use the low-code mode in Test Case Management.",
     newScript: "New Script",
     index: "No.",
     projectColumn: "Project",
@@ -1167,6 +1205,19 @@ export default {
     parameterHelper: "Project Parameters (Click to Insert)",
     parameterHelperEmpty:
       "No parameters configured for this project yet. Add some under Configuration Center > Parameter Management.",
+    caseParameters: "Case Parameters",
+    caseParametersHint:
+      "Case-level parameters override project parameters for all steps in this case",
+    stepParameters: "Step Parameters",
+    stepParametersHint:
+      "Step-level parameters override case and project parameters for this step only",
+    paramName: "Parameter Name",
+    paramValue: "Parameter Value",
+    addParameter: "Add Parameter",
+    noParameters: "No parameter overrides",
+    parameterOverrides: "Parameter Overrides",
+    inheritFromCase: "Inherited from case",
+    inheritFromProject: "Inherited from project",
     functionName: "Function",
     description: "Description",
     syntax: "Syntax",
@@ -1236,6 +1287,14 @@ export default {
       dataFactorySelected: "Data factory selected: {toolName}",
       parameterInserted: "Parameter inserted: {name}",
       selectProjectFirst: "Please select a project first",
+      generateScript: {
+        title: "Generate Script",
+        framework: "Framework",
+        language: "Language",
+        confirm: "Generate",
+        success: 'Script "{name}" generated successfully',
+        failed: "Failed to generate script",
+      },
     },
   },
 
@@ -1252,16 +1311,6 @@ export default {
     wait: "Wait",
   },
 
-  // Execution Configuration
-  execution: {
-    executionMode: "Execution Mode",
-    local: "Server-side",
-    remote: "Remote",
-    remoteService: "Remote Service",
-    selectRemoteService: "Select a remote browser service",
-    noRemoteServices: "No remote browser services available. Add one in Configuration Center first.",
-    remoteHeadlessHint: "For remote execution the browser runs on the remote server; the headed/headless choice here is passed to the remote client, which launches the browser in that mode on demand (Playwright CDP remote services currently support Chromium only. If the remote client hasn't been upgraded to support on-demand launch, this setting may have no effect and depend on the client's fixed startup configuration instead).",
-  },
 
   // Script Recording
   recorder: {

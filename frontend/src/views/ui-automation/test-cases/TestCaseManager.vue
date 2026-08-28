@@ -84,6 +84,15 @@
                 <el-button
                   size="small"
                   text
+                  type="success"
+                  @click.stop="handleGenerateScript(testCase)"
+                  :title="t('uiAutomation.testCase.generateScript.title')"
+                >
+                  <el-icon><MagicStick /></el-icon>
+                </el-button>
+                <el-button
+                  size="small"
+                  text
                   type="danger"
                   @click.stop="deleteTestCase(testCase)"
                 >
@@ -194,6 +203,49 @@
             </div>
           </div>
 
+          <!-- 用例参数覆盖 -->
+          <el-collapse v-model="activeSections" class="case-params-collapse">
+            <el-collapse-item
+              :title="t('uiAutomation.testCase.caseParameters')"
+              name="caseParams"
+            >
+              <div class="case-params-hint">
+                {{ t("uiAutomation.testCase.caseParametersHint") }}
+              </div>
+              <div class="params-table">
+                <div
+                  v-for="(_, index) in caseParamsList"
+                  :key="index"
+                  class="param-row"
+                >
+                  <el-input
+                    v-model="caseParamsList[index].name"
+                    :placeholder="t('uiAutomation.testCase.paramName')"
+                    size="small"
+                    style="width: 180px"
+                  />
+                  <el-input
+                    v-model="caseParamsList[index].value"
+                    :placeholder="t('uiAutomation.testCase.paramValue')"
+                    size="small"
+                    style="flex: 1"
+                  />
+                  <el-button
+                    size="small"
+                    type="danger"
+                    :icon="Delete"
+                    circle
+                    @click="removeCaseParam(index)"
+                  />
+                </div>
+                <el-button size="small" type="primary" plain @click="addCaseParam">
+                  <el-icon><Plus /></el-icon>
+                  {{ t("uiAutomation.testCase.addParameter") }}
+                </el-button>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+
           <!-- 测试步骤编辑 -->
           <div class="steps-container" v-show="showSteps">
             <div class="steps-header">
@@ -278,24 +330,23 @@
                               value="switchTab"
                             />
                           </el-select>
-                          <el-select
+                          <el-tree-select
                             v-if="needsElement(element.action_type)"
                             v-model="element.element_id"
+                            :data="elementTreeData"
                             :placeholder="
                               t('uiAutomation.testCase.selectElement')
                             "
                             size="small"
-                            style="width: 200px"
+                            style="width: 250px"
                             filterable
+                            check-strictly
+                            default-expand-all
+                            :render-after-expand="false"
+                            :props="{ label: 'label', children: 'children', disabled: 'disabled' }"
+                            :filter-node-method="filterElementNode"
                             @change="onElementChange(element)"
-                          >
-                            <el-option
-                              v-for="elem in availableElements"
-                              :key="elem.id"
-                              :label="`${elem.name} (${elem.locator_value})`"
-                              :value="elem.id"
-                            />
-                          </el-select>
+                          />
                         </div>
                         <div class="step-right">
                           <el-button
@@ -375,6 +426,23 @@
                                 class="variable-helper-btn"
                               >
                                 <el-icon><MagicStick /></el-icon>
+                              </el-button>
+                            </el-tooltip>
+                            <el-tooltip
+                              :content="
+                                t('uiAutomation.testCase.insertParameter')
+                              "
+                              placement="top"
+                              v-if="element.action_type !== 'switchTab'"
+                            >
+                              <el-button
+                                size="small"
+                                @click="
+                                  openParameterHelper(element, 'input_value')
+                                "
+                                class="parameter-helper-btn"
+                              >
+                                <el-icon><Key /></el-icon>
                               </el-button>
                             </el-tooltip>
                           </div>
@@ -491,6 +559,63 @@
                                 <el-icon><MagicStick /></el-icon>
                               </el-button>
                             </el-tooltip>
+                            <el-tooltip
+                              :content="
+                                t('uiAutomation.testCase.insertParameter')
+                              "
+                              placement="top"
+                            >
+                              <el-button
+                                size="small"
+                                style="margin-left: 5px"
+                                @click="
+                                  openParameterHelper(element, 'assert_value')
+                                "
+                                class="parameter-helper-btn"
+                              >
+                                <el-icon><Key /></el-icon>
+                              </el-button>
+                            </el-tooltip>
+                          </div>
+                        </div>
+
+                        <!-- 步骤参数覆盖 -->
+                        <div class="step-param step-params-section">
+                          <label>{{
+                            t("uiAutomation.testCase.stepParameters")
+                          }}</label>
+                          <div class="step-params-editor">
+                            <div
+                              v-for="(param, pIdx) in getStepParamsList(element)"
+                              :key="pIdx"
+                              class="param-row compact"
+                            >
+                              <el-input
+                                v-model="param.name"
+                                :placeholder="t('uiAutomation.testCase.paramName')"
+                                size="small"
+                                style="width: 140px"
+                                @change="syncStepParamsToObject(element)"
+                              />
+                              <el-input
+                                v-model="param.value"
+                                :placeholder="t('uiAutomation.testCase.paramValue')"
+                                size="small"
+                                style="flex: 1"
+                                @change="syncStepParamsToObject(element)"
+                              />
+                              <el-button
+                                size="small"
+                                type="danger"
+                                :icon="Delete"
+                                circle
+                                @click="removeStepParam(element, pIdx)"
+                              />
+                            </div>
+                            <el-button size="small" plain @click="addStepParam(element)">
+                              <el-icon><Plus /></el-icon>
+                              {{ t("uiAutomation.testCase.addParameter") }}
+                            </el-button>
                           </div>
                         </div>
 
@@ -868,10 +993,95 @@
       </el-tabs>
     </el-dialog>
 
+    <!-- 项目参数选择器对话框 -->
+    <el-dialog
+      :close-on-press-escape="false"
+      :modal="true"
+      v-model="showParameterHelper"
+      :title="t('uiAutomation.testCase.parameterHelper')"
+      :close-on-click-modal="false"
+      width="700px"
+    >
+      <el-table
+        :data="projectParameters"
+        style="width: 100%"
+        @row-click="insertParameter"
+        highlight-current-row
+      >
+        <el-table-column
+          prop="name"
+          :label="t('uiAutomation.testCase.parameterName')"
+          width="180"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.name }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="value"
+          :label="t('uiAutomation.testCase.parameterValue')"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="description"
+          :label="t('uiAutomation.testCase.description')"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          :label="t('uiAutomation.testCase.operation')"
+          width="80"
+          fixed="right"
+        >
+          <template #default>
+            <el-button link type="primary" size="small">{{
+              t("uiAutomation.testCase.insert")
+            }}</el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty
+            :description="t('uiAutomation.testCase.parameterHelperEmpty')"
+          />
+        </template>
+      </el-table>
+    </el-dialog>
+
     <DataFactorySelector
       v-model="showDataFactorySelector"
       @select="handleDataFactorySelect"
     />
+
+    <el-dialog
+      v-model="generateDialogVisible"
+      :title="t('uiAutomation.testCase.generateScript.title')"
+      width="480px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-width="80px">
+        <el-form-item :label="t('uiAutomation.testCase.generateScript.framework')">
+          <el-radio-group v-model="generateForm.framework">
+            <el-radio value="playwright">Playwright</el-radio>
+            <el-radio value="selenium">Selenium</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="t('uiAutomation.testCase.generateScript.language')">
+          <el-radio-group v-model="generateForm.language">
+            <el-radio value="python">Python</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="generateDialogVisible = false">
+          {{ t("uiAutomation.common.cancel") }}
+        </el-button>
+        <el-button type="primary" :loading="generating" @click="confirmGenerateScript">
+          {{ t("uiAutomation.testCase.generateScript.confirm") }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -895,6 +1105,7 @@ import {
   Refresh,
   WarningFilled,
   MagicStick,
+  Key,
 } from "@element-plus/icons-vue";
 import draggable from "vuedraggable";
 import DataFactorySelector from "@/components/DataFactorySelector.vue";
@@ -905,6 +1116,7 @@ const { t } = useI18n();
 import {
   getUiProjects,
   getElements,
+  getElementGroups,
   createTestCase,
   updateTestCase,
   deleteTestCase as deleteTestCaseApi,
@@ -912,6 +1124,8 @@ import {
   runTestCase as runTestCaseApi,
   copyTestCase as copyTestCaseApi,
   getLocatorStrategies,
+  getUiProjectParameters,
+  generateScriptFromTestCase,
 } from "@/api/ui_automation";
 import { getVariableFunctions } from "@/api/data-factory";
 
@@ -922,6 +1136,7 @@ const testCases = ref([]);
 const selectedTestCase = ref(null);
 const currentSteps = ref([]);
 const availableElements = ref([]);
+const elementGroups = ref([]);
 const searchKeyword = ref("");
 const showCreateDialog = ref(false);
 const editingTestCase = ref(null);
@@ -942,6 +1157,10 @@ const showDataFactorySelector = ref(false);
 const currentStepForDataFactory = ref(null);
 const currentFieldForDataFactory = ref("");
 const variableCategories = ref([]);
+const showParameterHelper = ref(false);
+const currentStepForParameter = ref(null);
+const currentFieldForParameter = ref("");
+const projectParameters = ref([]);
 const loading = ref(false);
 
 // 表单数据
@@ -959,6 +1178,63 @@ const filteredTestCases = computed(() => {
       tc.name.includes(searchKeyword.value) ||
       tc.description?.includes(searchKeyword.value),
   );
+});
+
+// 构建树形元素数据，用于 el-tree-select
+const elementTreeData = computed(() => {
+  const topLevelGroups = elementGroups.value.filter(
+    (g) => !g.parent_group
+  );
+
+  // 按分组归集元素（API 返回嵌套 group 对象，非 group_id）
+  const elemsByGroup = {};
+  const ungrouped = [];
+  availableElements.value.forEach((elem) => {
+    const gid = elem.group?.id || elem.group_id;
+    if (gid) {
+      if (!elemsByGroup[gid]) elemsByGroup[gid] = [];
+      elemsByGroup[gid].push(elem);
+    } else {
+      ungrouped.push(elem);
+    }
+  });
+
+  const toElemNode = (elem) => ({
+    value: elem.id,
+    label: `${elem.name} (${elem.locator_value})`,
+    isLeaf: true,
+  });
+
+  // 递归构建分组节点
+  const buildGroupNodes = (groups) => {
+    return groups
+      .map((g) => {
+        const childGroupNodes = g.children ? buildGroupNodes(g.children) : [];
+        const childElemNodes = (elemsByGroup[g.id] || []).map(toElemNode);
+        const children = [...childGroupNodes, ...childElemNodes];
+        if (children.length === 0) return null;
+        return {
+          value: `group_${g.id}`,
+          label: g.name,
+          disabled: true,
+          children,
+        };
+      })
+      .filter(Boolean);
+  };
+
+  const result = buildGroupNodes(topLevelGroups);
+
+  if (ungrouped.length > 0) {
+    result.push({
+      value: "__ungrouped__",
+      label: t("uiAutomation.element.ungrouped"),
+      disabled: true,
+      children: ungrouped.map(toElemNode),
+    });
+  }
+
+  return result;
 });
 
 // 解析执行日志
@@ -1002,12 +1278,17 @@ const loadTestCases = async () => {
 const loadElements = async () => {
   if (!projectId.value) {
     availableElements.value = [];
+    elementGroups.value = [];
     return;
   }
 
   try {
-    const response = await getElements({ project: projectId.value });
-    availableElements.value = response.data.results || response.data;
+    const [elemResp, groupResp] = await Promise.all([
+      getElements({ project: projectId.value }),
+      getElementGroups({ project: projectId.value }),
+    ]);
+    availableElements.value = elemResp.data.results || elemResp.data;
+    elementGroups.value = groupResp.data.results || groupResp.data || [];
   } catch (error) {
     console.error("获取元素列表失败:", error);
   }
@@ -1028,6 +1309,7 @@ const selectTestCase = (testCase) => {
   }
 
   selectedTestCase.value = testCase;
+  syncCaseParamsFromObject(selectedTestCase.value.case_parameters);
   // 确保步骤数据格式正确，添加前端需要的字段
   if (testCase.steps && testCase.steps.length > 0) {
     currentSteps.value = testCase.steps.map((step) => ({
@@ -1038,9 +1320,76 @@ const selectTestCase = (testCase) => {
   } else {
     currentSteps.value = [];
   }
+  // 初始化步骤参数覆盖的可编辑列表
+  currentSteps.value.forEach((step) => {
+    step._stepParamsList = Object.entries(step.step_parameters || {}).map(
+      ([name, value]) => ({ name, value }),
+    );
+  });
   // 只有在切换到不同用例时才清空执行结果
   executionResult.value = null;
   showSteps.value = true;
+};
+
+const activeSections = ref([]);
+
+// Convert case_parameters object to editable list
+const caseParamsList = ref([]);
+
+const syncCaseParamsFromObject = (paramsObj) => {
+  caseParamsList.value = Object.entries(paramsObj || {}).map(([name, value]) => ({
+    name,
+    value,
+  }));
+};
+
+const syncCaseParamsToObject = () => {
+  const obj = {};
+  for (const p of caseParamsList.value) {
+    if (p.name.trim()) {
+      obj[p.name.trim()] = p.value;
+    }
+  }
+  return obj;
+};
+
+const addCaseParam = () => {
+  caseParamsList.value.push({ name: "", value: "" });
+};
+
+const removeCaseParam = (index) => {
+  caseParamsList.value.splice(index, 1);
+};
+
+const getStepParamsList = (step) => {
+  if (!step._stepParamsList) {
+    step._stepParamsList = Object.entries(step.step_parameters || {}).map(
+      ([name, value]) => ({ name, value }),
+    );
+  }
+  return step._stepParamsList;
+};
+
+const syncStepParamsToObject = (step) => {
+  const obj = {};
+  for (const p of step._stepParamsList || []) {
+    if (p.name.trim()) {
+      obj[p.name.trim()] = p.value;
+    }
+  }
+  step.step_parameters = obj;
+};
+
+const addStepParam = (step) => {
+  if (!step._stepParamsList) {
+    step._stepParamsList = [];
+  }
+  step._stepParamsList.push({ name: "", value: "" });
+};
+
+const removeStepParam = (step, index) => {
+  step._stepParamsList.splice(index, 1);
+  syncStepParamsToObject(step);
 };
 
 const addStep = () => {
@@ -1081,8 +1430,12 @@ const onActionTypeChange = (step) => {
   }
 };
 
+const filterElementNode = (value, data) => {
+  if (!value) return true;
+  return data.label.toLowerCase().includes(value.toLowerCase());
+};
+
 const onElementChange = (step) => {
-  // 元素变化时的处理
   const element = availableElements.value.find((e) => e.id === step.element_id);
   if (element && !step.description) {
     step.description = `${getActionTypeText(step.action_type)}${element.name}`;
@@ -1112,8 +1465,12 @@ const saveTestCase = async () => {
   if (!selectedTestCase.value) return;
 
   try {
+    // 同步各步骤的参数覆盖到 step_parameters
+    currentSteps.value.forEach((step) => syncStepParamsToObject(step));
+
     const updateData = {
       ...selectedTestCase.value,
+      case_parameters: syncCaseParamsToObject(),
       steps: currentSteps.value,
     };
 
@@ -1225,8 +1582,8 @@ const editTestCase = (testCase) => {
 const deleteTestCase = async (testCase) => {
   try {
     await ElMessageBox.confirm(
-      t("uiAutomation.testCase.delete.confirm", { name: testCase.name }),
-      t("uiAutomation.testCase.delete.title"),
+      t("uiAutomation.testCase.messages.deleteConfirm", { name: testCase.name }),
+      t("uiAutomation.testCase.messages.confirmDelete"),
       {
         confirmButtonText: t("uiAutomation.common.confirm"),
         cancelButtonText: t("uiAutomation.common.cancel"),
@@ -1235,7 +1592,7 @@ const deleteTestCase = async (testCase) => {
     );
 
     await deleteTestCaseApi(testCase.id);
-    ElMessage.success(t("uiAutomation.testCase.delete.success"));
+    ElMessage.success(t("uiAutomation.testCase.messages.deleteSuccess"));
 
     // 从列表中移除
     const index = testCases.value.findIndex((tc) => tc.id === testCase.id);
@@ -1260,8 +1617,8 @@ const deleteTestCase = async (testCase) => {
 const copyTestCase = async (testCase) => {
   try {
     await ElMessageBox.confirm(
-      t("uiAutomation.testCase.copy.confirm", { name: testCase.name }),
-      t("uiAutomation.testCase.copy.title"),
+      t("uiAutomation.testCase.messages.copyConfirm", { name: testCase.name }),
+      t("uiAutomation.testCase.messages.confirmCopy"),
       {
         confirmButtonText: t("uiAutomation.common.confirm"),
         cancelButtonText: t("uiAutomation.common.cancel"),
@@ -1270,22 +1627,63 @@ const copyTestCase = async (testCase) => {
     );
 
     const response = await copyTestCaseApi(testCase.id);
-    ElMessage.success(t("uiAutomation.testCase.copy.success"));
+    ElMessage.success(t("uiAutomation.testCase.messages.copySuccess"));
 
+    const newCase = response.data;
     // 找到原用例的位置
     const index = testCases.value.findIndex((tc) => tc.id === testCase.id);
     if (index !== -1) {
       // 在原用例下方插入新用例
-      testCases.value.splice(index + 1, 0, response.data);
+      testCases.value.splice(index + 1, 0, newCase);
     } else {
       // 如果找不到，就添加到末尾
-      testCases.value.push(response.data);
+      testCases.value.push(newCase);
     }
+
+    // 自动选中新复制的用例
+    selectTestCase(newCase);
   } catch (error) {
     if (error !== "cancel") {
       console.error("复制测试用例失败:", error);
       ElMessage.error("复制失败");
     }
+  }
+};
+
+const generateDialogVisible = ref(false);
+const generating = ref(false);
+const generateTarget = ref(null);
+const generateForm = reactive({
+  framework: "playwright",
+  language: "python",
+});
+
+const handleGenerateScript = (testCase) => {
+  generateTarget.value = testCase;
+  generateForm.framework = "playwright";
+  generateForm.language = "python";
+  generateDialogVisible.value = true;
+};
+
+const confirmGenerateScript = async () => {
+  if (!generateTarget.value) return;
+  generating.value = true;
+  try {
+    const res = await generateScriptFromTestCase(generateTarget.value.id, {
+      framework: generateForm.framework,
+      language: generateForm.language,
+    });
+    ElMessage.success(
+      t("uiAutomation.testCase.generateScript.success", {
+        name: res.data.name,
+      }),
+    );
+    generateDialogVisible.value = false;
+  } catch (error) {
+    console.error("生成脚本失败:", error);
+    ElMessage.error(t("uiAutomation.testCase.generateScript.failed"));
+  } finally {
+    generating.value = false;
   }
 };
 
@@ -1459,6 +1857,44 @@ const openDataFactorySelector = (step, field) => {
   currentStepForDataFactory.value = step;
   currentFieldForDataFactory.value = field;
   showDataFactorySelector.value = true;
+};
+
+// 打开项目参数选择器：{{参数名}} 引用，执行时由后端 parameter_resolver 取当前值替换
+const openParameterHelper = async (step, field) => {
+  if (!projectId.value) {
+    ElMessage.warning(t("uiAutomation.testCase.messages.selectProjectFirst"));
+    return;
+  }
+  currentStepForParameter.value = step;
+  currentFieldForParameter.value = field;
+  showParameterHelper.value = true;
+  try {
+    const res = await getUiProjectParameters({
+      project: projectId.value,
+      page_size: 500,
+    });
+    projectParameters.value = res.data.results || res.data || [];
+  } catch {
+    projectParameters.value = [];
+    ElMessage.error(t("uiAutomation.messages.error.load"));
+  }
+};
+
+const insertParameter = (param) => {
+  const step = currentStepForParameter.value;
+  const field = currentFieldForParameter.value;
+  if (step && field) {
+    const reference = `{{${param.name}}}`;
+    const currentValue = step[field] || "";
+    step[field] = currentValue ? currentValue + reference : reference;
+
+    ElMessage.success(
+      t("uiAutomation.testCase.messages.parameterInserted", {
+        name: param.name,
+      }),
+    );
+    showParameterHelper.value = false;
+  }
 };
 
 const handleDataFactorySelect = (record) => {
@@ -1746,6 +2182,8 @@ onMounted(async () => {
 
 .case-info {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .case-name {
@@ -1759,11 +2197,15 @@ onMounted(async () => {
   color: #666;
   font-size: 14px;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .case-actions {
   display: flex;
   gap: 5px;
+  flex-shrink: 0;
 }
 
 .case-meta {
@@ -2365,5 +2807,44 @@ onMounted(async () => {
 .variable-helper-btn:hover {
   background-color: #5daf34;
   border-color: #5daf34;
+}
+
+.case-params-collapse {
+  margin-bottom: 15px;
+}
+
+.case-params-hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.params-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.param-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.param-row.compact {
+  gap: 6px;
+}
+
+.step-params-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+
+.step-params-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
 }
 </style>
