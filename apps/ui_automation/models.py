@@ -17,11 +17,22 @@ class UiProject(models.Model):
     name = models.CharField(max_length=200, verbose_name='项目名称')
     description = models.TextField(blank=True, verbose_name='项目描述')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, verbose_name='项目状态', default='IN_PROGRESS')
-    base_url = models.URLField(verbose_name='基础URL')
+    # 原来是 URLField：DRF 会按 URLField 自动套上 URL 格式校验，一旦这里填的是
+    # "{{base_url}}" 这种参数引用（见 UiProjectParameter），会被直接拒绝成
+    # "请输入合法的URL"。改成 CharField 放宽格式限制，允许填参数引用；真正的 URL
+    # 格式在真正拿去 page.goto() / driver.get() 之前已经由
+    # apps/ui_automation/parameter_resolver.py 解析成具体地址了，不需要在这一层
+    # 强校验格式。
+    base_url = models.CharField(max_length=500, verbose_name='基础URL')
     start_date = models.DateField(null=True, blank=True, verbose_name='开始日期')
     end_date = models.DateField(null=True, blank=True, verbose_name='结束日期')
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='owned_ui_projects', verbose_name='负责人')
     members = models.ManyToManyField(User, blank=True, related_name='ui_projects', verbose_name='团队成员')
+    login_test_case = models.ForeignKey(
+        'TestCase', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='+', verbose_name='前置登录用例',
+        help_text='执行套件/用例前自动运行此用例完成登录，套件已包含该用例时跳过',
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
 
@@ -33,6 +44,46 @@ class UiProject(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class UiProjectParameter(models.Model):
+    """项目参数：按项目管理一组扁平的键值对，供测试步骤和项目 base_url 引用。
+
+    使用方式：在测试步骤的输入值/断言值，或者项目的 base_url 里填 "{{参数名}}"，
+    执行时由 apps/ui_automation/parameter_resolver.py 按当前项目现查这张表替换成
+    真实值——同一个参数改了值，所有引用它的步骤/base_url 不用逐个改，下次执行
+    自动生效。
+
+    故意不用 apps/core/variable_resolver.py 里那套 "{{var}}" 运行时变量机制：那套
+    是靠一个进程级全局单例（VariableResolver 实例）保存 runtime_variables，多个
+    并发执行（比如 Django 进程同时处理两个用户的调试执行请求）会共享同一份状态，
+    互相串数据。这里的参数解析每次都直接查这张表，不维护任何跨请求共享的状态，
+    天然没有这个并发问题。
+    """
+    project = models.ForeignKey(
+        UiProject, on_delete=models.CASCADE,
+        related_name='parameters', verbose_name='所属项目'
+    )
+    name = models.CharField(max_length=100, verbose_name='参数名称')
+    value = models.TextField(blank=True, verbose_name='参数值')
+    description = models.CharField(max_length=255, blank=True, verbose_name='描述')
+    created_by = models.ForeignKey(
+        User, on_delete=models.CASCADE, verbose_name='创建者'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'ui_project_parameters'
+        verbose_name = '项目参数'
+        verbose_name_plural = '项目参数'
+        ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(fields=['project', 'name'], name='uniq_ui_project_parameter_name'),
+        ]
+
+    def __str__(self):
+        return f'{self.project.name} / {self.name}'
 
 
 class LocatorStrategy(models.Model):
@@ -417,6 +468,9 @@ class TestSuite(models.Model):
     passed_count = models.IntegerField(default=0, verbose_name='通过数')
     failed_count = models.IntegerField(default=0, verbose_name='失败数')
 
+    reuse_browser = models.BooleanField(default=False, verbose_name='复用浏览器',
+                                        help_text='开启后套件内多个用例共享同一浏览器实例，不重新打开')
+
     visibility = models.CharField(
         max_length=10,
         choices=[('all', '所有人可见'), ('private', '仅自己可见')],
@@ -588,11 +642,32 @@ class RemoteBrowserService(models.Model):
     capabilities = models.JSONField(default=dict, blank=True, verbose_name='浏览器能力配置')
     auth_config = models.JSONField(default=dict, blank=True, verbose_name='认证配置')
     is_active = models.BooleanField(default=True, verbose_name='是否启用')
+    last_heartbeat = models.DateTimeField(
+        null=True, blank=True, verbose_name='最近心跳时间',
+        help_text='客户端常驻运行期间按固定间隔上报，用来判断这条记录是不是"真的在线"，'
+                   '跟 is_active 分开——is_active 是人工/客户端自己设置的静态开关，'
+                   '客户端异常退出（被 kill、断电、断网）不会自动变成 false，'
+                   '但 last_heartbeat 会随着心跳停止而自然过期。'
+    )
     created_by = models.ForeignKey(
         User, on_delete=models.CASCADE, verbose_name='创建者'
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    HEARTBEAT_ONLINE_THRESHOLD_SECONDS = 90  # 客户端按 30 秒一次上报，留 3 倍余量再判定离线
+
+    @property
+    def is_online(self):
+        """最近一次心跳是否还在"判定为在线"的时间窗口内。
+
+        阈值给了 3 倍心跳间隔的余量（客户端默认 30 秒一次），避免单次心跳请求偶尔
+        慢了/丢了就被误判成离线；真的连不上时，最多 90 秒内也会被正确标记成离线。
+        """
+        if not self.last_heartbeat:
+            return False
+        from datetime import timedelta
+        return self.last_heartbeat >= timezone.now() - timedelta(seconds=self.HEARTBEAT_ONLINE_THRESHOLD_SECONDS)
 
     class Meta:
         db_table = 'ui_remote_browser_services'
@@ -604,22 +679,10 @@ class RemoteBrowserService(models.Model):
         return f'{self.name} ({self.get_service_type_display()})'
 
 
-class Screenshot(models.Model):
-    """截图模型"""
-    execution = models.ForeignKey(TestExecution, on_delete=models.CASCADE, related_name='screenshots', verbose_name='测试执行')
-    name = models.CharField(max_length=200, verbose_name='截图名称')
-    image = models.ImageField(upload_to='ui_screenshots/', verbose_name='截图文件')
-    description = models.TextField(blank=True, verbose_name='截图描述')
-    captured_at = models.DateTimeField(auto_now_add=True, verbose_name='捕获时间')
-
-    class Meta:
-        db_table = 'ui_screenshots'
-        verbose_name = 'UI截图'
-        verbose_name_plural = 'UI截图'
-        ordering = ['-captured_at']
-
-    def __str__(self):
-        return self.name
+# 注：Screenshot 模型已删除（全代码库没有任何 Screenshot.objects.create() 调用，
+# 是从未被使用过的死代码；真正的截图存储走 TestCaseExecution.screenshots /
+# AIExecutionRecord.screenshots_sequence 这两个 JSONField）。
+# 对应的迁移见 migrations/0005_delete_screenshot.py。
 
 
 class TestCase(models.Model):
@@ -646,6 +709,7 @@ class TestCase(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_test_cases', verbose_name='创建人')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    case_parameters = models.JSONField(default=dict, blank=True, verbose_name='用例级参数覆盖')
 
     class Meta:
         db_table = 'ui_test_cases'
@@ -688,6 +752,7 @@ class TestCaseStep(models.Model):
     wait_time = models.IntegerField(default=1000, verbose_name='等待时间(毫秒)')
     assert_type = models.CharField(max_length=20, choices=ASSERT_TYPE_CHOICES, blank=True, verbose_name='断言类型')
     assert_value = models.TextField(blank=True, verbose_name='断言期望值')
+    step_parameters = models.JSONField(default=dict, blank=True, verbose_name='步骤级参数覆盖')
     description = models.TextField(blank=True, verbose_name='步骤描述')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
 
