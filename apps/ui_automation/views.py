@@ -1577,6 +1577,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                     'wait_time': step.wait_time,
                     'assert_type': step.assert_type,
                     'assert_value': step.assert_value,
+                    'step_parameters': step.step_parameters,
                 }
 
                 # 获取元素数据
@@ -1627,6 +1628,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                     engine = SeleniumTestEngine(
                         browser_type=browser_type, headless=headless, remote_service=remote_service,
                         project_id=test_case.project_id,
+                        case_parameters=test_case.case_parameters,
                     )
 
                     try:
@@ -1834,6 +1836,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                         engine = PlaywrightTestEngine(
                             browser_type=browser_type, headless=headless, remote_service=remote_service,
                             project_id=test_case.project_id,
+                            case_parameters=test_case.case_parameters,
                         )
 
                         try:

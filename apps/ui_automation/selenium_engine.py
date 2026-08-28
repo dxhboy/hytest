@@ -5,6 +5,7 @@ Selenium自动化测试执行引擎
 import base64
 import time
 from .variable_resolver import resolve_variables
+from .parameter_resolver import resolve_project_parameters
 import os
 import shutil
 from datetime import datetime
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 class SeleniumTestEngine:
     """Selenium测试执行引擎"""
 
-    def __init__(self, browser_type='chrome', headless=True, remote_service=None):
+    def __init__(self, browser_type='chrome', headless=True, remote_service=None, project_id=None, case_parameters=None):
         """
         初始化测试引擎
 
@@ -31,10 +32,17 @@ class SeleniumTestEngine:
             browser_type: 浏览器类型 (chrome, firefox, safari, edge)
             headless: 是否无头模式
             remote_service: RemoteBrowserService 实例，为 None 时使用本地浏览器
+            project_id: 所属项目 id，用于解析步骤输入值/断言值/导航地址里的
+                "{{参数名}}"（见 UiProjectParameter + parameter_resolver.py）；
+                为 None 时这类占位符会原样保留，不会报错
+            case_parameters: 用例级参数覆盖（TestCase.case_parameters），
+                解析优先级为 step_parameters > case_parameters > 项目参数
         """
         self.browser_type = browser_type
         self.headless = headless
         self.remote_service = remote_service
+        self.project_id = project_id
+        self.case_parameters = case_parameters or {}
         self.driver = None
 
     @staticmethod
@@ -47,49 +55,29 @@ class SeleniumTestEngine:
 
         Returns:
             (是否可用, 错误信息)
+
+        Note:
+            候选路径统一从 browser_paths.py 读取（原来这里、ai_base.py、
+            views_config.py 各自维护一份不一致的路径列表，导致"环境检测显示
+            已安装、实际执行找不到浏览器"的问题，现在三处共用一份数据）。
         """
+        from .browser_paths import is_browser_available
+        import platform
+
         try:
-            if browser_type == 'chrome':
-                # 检查 Chrome 浏览器是否安装
-                chrome_paths = [
-                    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',  # macOS
-                    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',  # Windows
-                    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',  # Windows 32-bit
-                    '/usr/bin/google-chrome',  # Linux
-                    '/usr/bin/chromium-browser',  # Linux (Chromium)
-                ]
-                if not any(os.path.exists(path) for path in chrome_paths):
-                    return False, "Chrome 浏览器未安装。请先安装 Google Chrome 浏览器。"
-                return True, None
-
-            elif browser_type == 'firefox':
-                # 检查 Firefox 浏览器是否安装
-                firefox_paths = [
-                    '/Applications/Firefox.app/Contents/MacOS/firefox',  # macOS
-                    'C:\\Program Files\\Mozilla Firefox\\firefox.exe',  # Windows
-                    'C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe',  # Windows 32-bit
-                    '/usr/bin/firefox',  # Linux
-                ]
-                if not any(os.path.exists(path) for path in firefox_paths):
-                    return False, "Firefox 浏览器未安装。请先安装 Mozilla Firefox 浏览器。"
-                return True, None
-
-            elif browser_type == 'edge':
-                # 检查 Edge 浏览器是否安装
-                edge_paths = [
-                    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',  # macOS
-                    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',  # Windows
-                    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',  # Windows
-                ]
-                if not any(os.path.exists(path) for path in edge_paths):
-                    return False, "Edge 浏览器未安装。请先安装 Microsoft Edge 浏览器。"
+            if browser_type in ('chrome', 'firefox', 'edge'):
+                display_name = {'chrome': 'Chrome', 'firefox': 'Firefox', 'edge': 'Edge'}[browser_type]
+                if not is_browser_available(browser_type):
+                    return False, f"{display_name} 浏览器未安装。请先安装 {display_name} 浏览器。"
                 return True, None
 
             elif browser_type == 'safari':
                 # Safari 只在 macOS 上可用
-                import platform
                 if platform.system() != 'Darwin':
                     return False, "Safari 浏览器不可用。Safari 仅在 macOS 系统上可用。"
+
+                if not is_browser_available('safari'):
+                    return False, "未检测到 Safari 浏览器。"
 
                 # 检查 safaridriver 是否存在
                 safaridriver_path = '/usr/bin/safaridriver'
@@ -125,6 +113,29 @@ class SeleniumTestEngine:
         except Exception as e:
             logger.error(f"启动浏览器失败: {str(e)}")
             raise
+
+    @classmethod
+    def attach(cls, driver, browser_type='chrome', project_id=None, case_parameters=None):
+        """
+        包装一个已经启动好的 WebDriver，复用 execute_step() 的单步执行逻辑。
+
+        用于批量套件执行（TestExecutor）场景：浏览器由调用方统一创建/复用，
+        这样批量执行和单用例调试执行走同一套 execute_step 实现，
+        不用再各自维护一份 Selenium 动作分支代码。
+
+        Args:
+            driver: 已经启动好的 selenium WebDriver
+            browser_type: 仅用于记录，不会重新启动浏览器
+            project_id: 归属项目 id，用于 execute_step()/navigate() 里解析
+                "{{参数名}}" 项目参数引用；不传则不解析（原样保留）。
+            case_parameters: 用例级参数覆盖，同 __init__ 里的说明
+
+        Returns:
+            SeleniumTestEngine 实例（不会自动创建/关闭 driver，由调用方管理生命周期）
+        """
+        engine = cls(browser_type=browser_type, project_id=project_id, case_parameters=case_parameters)
+        engine.driver = driver
+        return engine
 
     def stop(self):
         """关闭浏览器"""
@@ -196,15 +207,24 @@ class SeleniumTestEngine:
         """
         print(f"\n🔵 开始执行步骤: action_type={step.action_type}")
         action_type = step.action_type
-        
-        # 预先解析变量
+
+        # 合并 step_parameters 与 case_parameters，step 层同名 key 覆盖 case 层，
+        # 解析优先级最终为 step_parameters > case_parameters > 项目参数（DB）
+        step_params = getattr(step, 'step_parameters', None) or {}
+        overrides = {**self.case_parameters, **step_params} if (self.case_parameters or step_params) else None
+
+        # 预先解析变量：先替换项目参数里的 "{{参数名}}"（见 UiProjectParameter /
+        # parameter_resolver.py），再走 resolve_variables() 处理 "${函数()}" 这类
+        # 数据工厂表达式——顺序很重要，这样参数值本身也可以是一个待求值的表达式
         resolved_input_value = step.input_value
         if step.input_value:
-            resolved_input_value = resolve_variables(step.input_value)
-            
+            resolved_input_value = resolve_project_parameters(step.input_value, self.project_id, overrides=overrides)
+            resolved_input_value = resolve_variables(resolved_input_value)
+
         resolved_assert_value = step.assert_value
         if step.assert_value:
-            resolved_assert_value = resolve_variables(step.assert_value)
+            resolved_assert_value = resolve_project_parameters(step.assert_value, self.project_id, overrides=overrides)
+            resolved_assert_value = resolve_variables(resolved_assert_value)
             
         start_time = time.time()
         screenshot_base64 = None
@@ -292,6 +312,11 @@ class SeleniumTestEngine:
             locator_strategy = element_data.get('locator_strategy', 'css')
             locator_value = element_data.get('locator_value', '')
             element_name = element_data.get('name', '未知元素')
+
+            # 解析定位表达式中的 {{参数}} 引用
+            if locator_value and '{{' in locator_value:
+                locator_value = resolve_project_parameters(locator_value, self.project_id, overrides=overrides)
+                locator_value = resolve_variables(locator_value)
 
             # 获取强制操作选项
             force_action = element_data.get('force_action', False)
@@ -821,13 +846,20 @@ class SeleniumTestEngine:
         导航到指定URL
 
         Args:
-            url: 目标URL
+            url: 目标URL（项目的 base_url 或者步骤里填的地址，可以包含
+                "{{参数名}}" 引用，这里会先按项目参数解析成真实地址再导航）
 
         Returns:
             (是否成功, 日志信息)
         """
         try:
-            self.driver.get(url)
+            # 项目的 base_url 字段允许填 "{{参数名}}"（见 UiProject.base_url 的
+            # 字段注释），这里统一解析成真实地址，调用方不需要关心这一层；
+            # navigate 没有 step 上下文，只用 case_parameters 覆盖项目参数
+            resolved_url = resolve_project_parameters(
+                url, self.project_id, overrides=self.case_parameters if self.case_parameters else None
+            )
+            self.driver.get(resolved_url)
 
             # 等待页面基本加载完成
             # 在服务器环境（特别是无头模式）需要更长的等待时间
@@ -848,7 +880,9 @@ class SeleniumTestEngine:
             extra_wait = 3 if is_linux else 2
             time.sleep(extra_wait)
 
-            log = f"✓ 成功导航到: {url}\n"
+            log = f"✓ 成功导航到: {resolved_url}\n"
+            if resolved_url != url:
+                log += f"  - 原始地址: {url}\n"
             log += f"  - 等待页面加载完成（基础等待+额外{extra_wait}秒）"
             return True, log
         except Exception as e:

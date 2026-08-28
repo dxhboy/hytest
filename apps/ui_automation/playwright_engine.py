@@ -10,13 +10,14 @@ from typing import Dict, List, Optional, Tuple
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext, TimeoutError as PlaywrightTimeout
 import logging
 from .variable_resolver import resolve_variables
+from .parameter_resolver import resolve_project_parameters
 
 logger = logging.getLogger(__name__)
 
 class PlaywrightTestEngine:
     """Playwright测试执行引擎"""
 
-    def __init__(self, browser_type='chromium', headless=True, remote_service=None):
+    def __init__(self, browser_type='chromium', headless=True, remote_service=None, project_id=None, case_parameters=None):
         """
         初始化测试引擎
 
@@ -24,10 +25,17 @@ class PlaywrightTestEngine:
             browser_type: 浏览器类型 (chromium, firefox, webkit)
             headless: 是否无头模式
             remote_service: RemoteBrowserService 实例，为 None 时使用本地浏览器
+            project_id: 所属项目 id，用于解析步骤输入值/断言值/导航地址里的
+                "{{参数名}}"（见 UiProjectParameter + parameter_resolver.py）；
+                为 None 时这类占位符会原样保留，不会报错
+            case_parameters: 用例级参数覆盖（TestCase.case_parameters），
+                解析优先级为 step_parameters > case_parameters > 项目参数
         """
         self.browser_type = browser_type
         self.headless = headless
         self.remote_service = remote_service
+        self.project_id = project_id
+        self.case_parameters = case_parameters or {}
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -46,14 +54,14 @@ class PlaywrightTestEngine:
                 remote_service=self.remote_service,
             )
 
-            # 创建浏览器上下文
-            self.context = await self.browser.new_context(
+            # 创建/复用浏览器上下文 + 页面（远程 playwright_cdp 场景会复用远程 Chrome
+            # 自带的默认窗口，不会再多开一个隐身窗口，见 create_playwright_context_and_page 说明）
+            self.context, self.page = await BrowserConnectionFactory.create_playwright_context_and_page(
+                self.browser,
+                remote_service=self.remote_service,
                 viewport={'width': 1920, 'height': 1080},
                 user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
             )
-
-            # 创建页面
-            self.page = await self.context.new_page()
 
             logger.info(f"浏览器启动成功: {self.browser_type}, headless={self.headless}, remote={self.remote_service is not None}")
 
@@ -61,20 +69,71 @@ class PlaywrightTestEngine:
             logger.error(f"启动浏览器失败: {str(e)}")
             raise
 
+    @classmethod
+    def attach(cls, page, context=None, browser=None, browser_type='chromium', project_id=None, case_parameters=None):
+        """
+        包装一个已经启动好的 Page，复用 execute_step() 的单步执行逻辑。
+
+        用于批量套件执行（TestExecutor）场景：浏览器/页面由调用方统一创建，
+        这样批量执行和单用例调试执行走同一套 Playwright 动作实现，
+        不用再各自维护一份重复代码。
+
+        Args:
+            page: 已经创建好的 playwright.async_api.Page
+            context: 该 page 所属的 BrowserContext（可选，仅用于 switchTab 等场景）
+            browser: 该 page 所属的 Browser（可选）
+            browser_type: 仅用于记录，不会重新启动浏览器
+            project_id: 所属项目 id，同 __init__ 里的说明，用于解析 "{{参数名}}"
+            case_parameters: 用例级参数覆盖，同 __init__ 里的说明
+
+        Returns:
+            PlaywrightTestEngine 实例（不会自动创建/关闭浏览器，由调用方管理生命周期）
+        """
+        engine = cls(browser_type=browser_type, project_id=project_id, case_parameters=case_parameters)
+        engine.page = page
+        engine.context = context if context is not None else getattr(page, 'context', None)
+        engine.browser = browser
+        return engine
+
     async def stop(self):
-        """关闭浏览器"""
-        try:
-            if self.page:
+        """关闭浏览器
+
+        每一步单独 try/except，不要让前面某一步的异常挡住后面的清理——尤其是
+        close_playwright_browser() 这一步：远程按需启动的浏览器要靠它去调用远程客户端的
+        /close 接口才能真正关掉 Chrome 进程、释放排队锁，如果因为前面 page.close()/
+        context.close() 抛了异常就被跳过，远程机器会一直被占着，只能等
+        max_lifetime_seconds 兜底超时才释放。
+        """
+        from .browser_factory import close_playwright_browser
+
+        if self.page:
+            try:
                 await self.page.close()
-            if self.context:
+            except Exception as e:
+                logger.warning(f"关闭 page 失败（不影响后续清理）: {e}")
+
+        if self.context:
+            try:
                 await self.context.close()
-            if self.browser:
-                await self.browser.close()
-            if self.playwright:
+            except Exception as e:
+                logger.warning(f"关闭 context 失败（不影响后续清理）: {e}")
+
+        if self.browser:
+            try:
+                # 统一走 close_playwright_browser：本地浏览器等价于 browser.close()，
+                # 远程按需启动的浏览器还会额外调用远程客户端的 /close 接口真正关掉
+                # 远程 Chrome 进程（见 browser_factory.py 里的说明）
+                await close_playwright_browser(self.browser)
+            except Exception as e:
+                logger.error(f"关闭浏览器失败: {str(e)}")
+
+        if self.playwright:
+            try:
                 await self.playwright.stop()
-            logger.info("浏览器已关闭")
-        except Exception as e:
-            logger.error(f"关闭浏览器失败: {str(e)}")
+            except Exception as e:
+                logger.warning(f"停止 Playwright 失败: {e}")
+
+        logger.info("浏览器已关闭")
 
     async def execute_step(self, step, element_data: Dict) -> Tuple[bool, str, Optional[str]]:
         """
@@ -88,15 +147,24 @@ class PlaywrightTestEngine:
             (是否成功, 日志信息, 截图base64)
         """
         action_type = step.action_type
-        
-        # 预先解析变量
+
+        # 合并 step_parameters 与 case_parameters，step 层同名 key 覆盖 case 层，
+        # 解析优先级最终为 step_parameters > case_parameters > 项目参数（DB）
+        step_params = getattr(step, 'step_parameters', None) or {}
+        overrides = {**self.case_parameters, **step_params} if (self.case_parameters or step_params) else None
+
+        # 预先解析变量：先替换项目参数里的 "{{参数名}}"（见 UiProjectParameter /
+        # parameter_resolver.py），再走 resolve_variables() 处理 "${函数()}" 这类
+        # 数据工厂表达式——顺序很重要，这样参数值本身也可以是一个待求值的表达式
         resolved_input_value = step.input_value
         if step.input_value:
-            resolved_input_value = resolve_variables(step.input_value)
-            
+            resolved_input_value = resolve_project_parameters(step.input_value, self.project_id, overrides=overrides)
+            resolved_input_value = resolve_variables(resolved_input_value)
+
         resolved_assert_value = step.assert_value
         if step.assert_value:
-            resolved_assert_value = resolve_variables(step.assert_value)
+            resolved_assert_value = resolve_project_parameters(step.assert_value, self.project_id, overrides=overrides)
+            resolved_assert_value = resolve_variables(resolved_assert_value)
             
         start_time = time.time()
         screenshot_base64 = None
@@ -174,9 +242,20 @@ class PlaywrightTestEngine:
 
                 # 将目标页面设为当前活动页面
                 await target_page.bring_to_front()
+
+                # 等待新标签页加载稳定，避免切换后立即操作导致元素还没渲染出来
+                try:
+                    await target_page.wait_for_load_state('networkidle', timeout=10000)
+                except Exception:
+                    try:
+                        await target_page.wait_for_load_state('domcontentloaded', timeout=5000)
+                    except Exception:
+                        pass
+                await target_page.wait_for_timeout(1500)
+
                 # 更新引擎的当前页面引用
                 self.page = target_page
-                
+
                 execution_time = round(time.time() - start_time, 2)
                 log = f"✓ 切换标签页成功\n"
                 log += f"  - 目标索引: {final_target_index}\n"
@@ -189,6 +268,11 @@ class PlaywrightTestEngine:
             locator_strategy = element_data.get('locator_strategy', 'css')
             locator_value = element_data.get('locator_value', '')
             element_name = element_data.get('name', '未知元素')
+
+            # 解析定位表达式中的 {{参数}} 引用
+            if locator_value and '{{' in locator_value:
+                locator_value = resolve_project_parameters(locator_value, self.project_id, overrides=overrides)
+                locator_value = resolve_variables(locator_value)
 
             # 获取强制操作选项（用于visibility:hidden的元素）
             force_action = element_data.get('force_action', False)
@@ -733,25 +817,35 @@ class PlaywrightTestEngine:
         导航到指定URL
 
         Args:
-            url: 目标URL
+            url: 目标URL（项目的 base_url 或者步骤里填的地址，可以包含
+                "{{参数名}}" 引用，这里会先按项目参数解析成真实地址再导航）
 
         Returns:
             (是否成功, 日志信息)
         """
         try:
+            # 项目的 base_url 字段允许填 "{{参数名}}"（见 UiProject.base_url 的
+            # 字段注释），这里统一解析成真实地址，调用方不需要关心这一层；
+            # navigate 没有 step 上下文，只用 case_parameters 覆盖项目参数
+            resolved_url = resolve_project_parameters(
+                url, self.project_id, overrides=self.case_parameters if self.case_parameters else None
+            )
+
             # 检测是否在Linux服务器环境
             import platform
             is_linux = platform.system() == 'Linux'
 
             # 使用 networkidle 等待页面加载完成
-            await self.page.goto(url, wait_until='networkidle', timeout=30000)
+            await self.page.goto(resolved_url, wait_until='networkidle', timeout=30000)
 
             # 额外等待，确保动态内容加载（Vue/React等SPA应用）
             # 服务器无头模式需要更长的等待时间
             extra_wait = 3 if is_linux else 2
             await asyncio.sleep(extra_wait)
 
-            log = f"✓ 成功导航到: {url}\n"
+            log = f"✓ 成功导航到: {resolved_url}\n"
+            if resolved_url != url:
+                log += f"  - 原始地址: {url}\n"
             log += f"  - 等待页面加载完成（networkidle + 额外{extra_wait}秒）"
             return True, log
         except Exception as e:
