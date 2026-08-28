@@ -2,11 +2,11 @@ from rest_framework import serializers
 from django.utils import timezone
 from .models import (
     UiProject, LocatorStrategy, Element, TestScript, TestSuite,
-    TestSuiteScript, TestSuiteTestCase, TestExecution, TestEnvironment, Screenshot,
+    TestSuiteScript, TestSuiteTestCase, TestExecution, TestEnvironment,
     ElementGroup, PageObject, PageObjectElement, ScriptStep, ScriptElementUsage,
     TestCase, TestCaseStep, TestCaseExecution, OperationRecord,
     UiScheduledTask, UiNotificationLog, UiTaskNotificationSetting,
-    AICase, AIExecutionRecord, RemoteBrowserService
+    AICase, AIExecutionRecord, RemoteBrowserService, UiProjectParameter
 )
 from django.contrib.auth import get_user_model
 
@@ -22,6 +22,7 @@ class UserSerializer(serializers.ModelSerializer):
 class UiProjectSerializer(serializers.ModelSerializer):
     owner = UserSerializer(read_only=True)
     members = UserSerializer(many=True, read_only=True)
+    login_test_case_name = serializers.CharField(source='login_test_case.name', read_only=True, default=None)
 
     class Meta:
         model = UiProject
@@ -32,13 +33,13 @@ class UiProjectSerializer(serializers.ModelSerializer):
 class UiProjectCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = UiProject
-        fields = ('name', 'description', 'status', 'base_url', 'start_date', 'end_date', 'owner', 'members')
+        fields = ('name', 'description', 'status', 'base_url', 'start_date', 'end_date', 'owner', 'members', 'login_test_case')
 
 
 class UiProjectUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = UiProject
-        fields = ('name', 'description', 'status', 'base_url', 'start_date', 'end_date', 'members')
+        fields = ('name', 'description', 'status', 'base_url', 'start_date', 'end_date', 'members', 'login_test_case')
 
 
 class LocatorStrategySerializer(serializers.ModelSerializer):
@@ -183,6 +184,7 @@ class TestSuiteSerializer(serializers.ModelSerializer):
     suite_scripts = TestSuiteScriptSerializer(many=True, read_only=True)
     suite_test_cases = TestSuiteTestCaseSerializer(many=True, read_only=True)
     test_case_count = serializers.SerializerMethodField()
+    script_count = serializers.SerializerMethodField()
 
     class Meta:
         model = TestSuite
@@ -197,18 +199,22 @@ class TestSuiteSerializer(serializers.ModelSerializer):
         """获取测试用例数量"""
         return obj.suite_test_cases.count()
 
+    def get_script_count(self, obj):
+        """获取脚本数量"""
+        return obj.suite_scripts.count()
+
 
 class TestSuiteCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestSuite
-        fields = ('id', 'project', 'name', 'description')
+        fields = ('id', 'project', 'name', 'description', 'reuse_browser')
         read_only_fields = ('id',)
 
 
 class TestSuiteUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestSuite
-        fields = ('name', 'description')
+        fields = ('name', 'description', 'reuse_browser')
 
 
 class TestSuiteWithScriptsSerializer(serializers.ModelSerializer):
@@ -263,16 +269,6 @@ class TestExecutionCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestExecution
         fields = ('project', 'test_suite', 'test_script', 'environment', 'executed_by')
-
-
-class ScreenshotSerializer(serializers.ModelSerializer):
-    execution = TestExecutionSerializer(read_only=True)
-    execution_id = serializers.IntegerField(write_only=True)
-
-    class Meta:
-        model = Screenshot
-        fields = '__all__'
-        read_only_fields = ('created_at', 'captured_at')
 
 
 # 新增的serializers
@@ -536,7 +532,8 @@ class TestCaseStepSerializer(serializers.ModelSerializer):
         model = TestCaseStep
         fields = [
             'id', 'step_number', 'action_type', 'element', 'element_name', 'element_locator',
-            'input_value', 'wait_time', 'assert_type', 'assert_value', 'description', 'created_at'
+            'input_value', 'wait_time', 'assert_type', 'assert_value', 'step_parameters',
+            'description', 'created_at'
         ]
 
 
@@ -550,7 +547,7 @@ class TestCaseSerializer(serializers.ModelSerializer):
         model = TestCase
         fields = [
             'id', 'name', 'description', 'project', 'project_name', 'status', 'priority',
-            'created_by', 'created_by_name', 'created_at', 'updated_at', 'steps'
+            'case_parameters', 'created_by', 'created_by_name', 'created_at', 'updated_at', 'steps'
         ]
         read_only_fields = ['created_by']
 
@@ -631,20 +628,39 @@ class OperationRecordSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+# ==================== 项目参数序列化器 ====================
+
+class UiProjectParameterSerializer(serializers.ModelSerializer):
+    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+
+    class Meta:
+        model = UiProjectParameter
+        fields = [
+            'id', 'project', 'name', 'value', 'description',
+            'created_by', 'created_by_name', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['created_by', 'created_at', 'updated_at']
+
+
 # ==================== 远程浏览器服务序列化器 ====================
 
 class RemoteBrowserServiceSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.username', read_only=True)
     service_type_display = serializers.CharField(source='get_service_type_display', read_only=True)
+    # is_online 是模型上的 @property（不落库，实时根据 last_heartbeat 算出来的），
+    # 跟 is_active 的区别见模型里的注释：is_active 是静态开关，is_online 才反映
+    # 客户端是不是真的还在正常上报心跳
+    is_online = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = RemoteBrowserService
         fields = [
             'id', 'project', 'name', 'service_type', 'service_type_display',
             'url', 'capabilities', 'auth_config', 'is_active',
+            'last_heartbeat', 'is_online',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
         ]
-        read_only_fields = ['created_by', 'created_at', 'updated_at']
+        read_only_fields = ['created_by', 'created_at', 'updated_at', 'last_heartbeat', 'is_online']
 
 
 class RemoteBrowserServiceCreateSerializer(serializers.ModelSerializer):

@@ -14,15 +14,15 @@ import json
 import re
 import random
 import time
+from datetime import timedelta
 
 from .models import (
     UiProject, LocatorStrategy, Element, TestScript, TestSuite,
-    TestSuiteScript, TestExecution, Screenshot,
+    TestSuiteScript, TestExecution,
     ElementGroup, PageObject, PageObjectElement, ScriptStep, ScriptElementUsage,
     TestCase, TestCaseStep, TestCaseExecution, OperationRecord,
-    TestCase, TestCaseStep, TestCaseExecution, OperationRecord,
     UiScheduledTask, UiNotificationLog, UiTaskNotificationSetting,
-    AICase, AIExecutionRecord, RemoteBrowserService
+    AICase, AIExecutionRecord, RemoteBrowserService, UiProjectParameter
 )
 from .serializers import (
     UiProjectSerializer, UiProjectCreateSerializer, UiProjectUpdateSerializer,
@@ -32,7 +32,6 @@ from .serializers import (
     TestSuiteSerializer, TestSuiteCreateSerializer, TestSuiteUpdateSerializer, TestSuiteWithScriptsSerializer,
     TestSuiteScriptSerializer, TestSuiteTestCaseSerializer,
     TestExecutionSerializer, TestExecutionCreateSerializer,
-    ScreenshotSerializer,
     ElementGroupSerializer, ElementGroupCreateSerializer,
     PageObjectSerializer, PageObjectCreateSerializer, PageObjectElementSerializer,
     ScriptStepSerializer, ScriptElementUsageSerializer,
@@ -41,7 +40,8 @@ from .serializers import (
     OperationRecordSerializer,
     UiScheduledTaskSerializer, UiNotificationLogSerializer, UiTaskNotificationSettingSerializer,
     AICaseSerializer, AIExecutionRecordSerializer,
-    RemoteBrowserServiceSerializer, RemoteBrowserServiceCreateSerializer
+    RemoteBrowserServiceSerializer, RemoteBrowserServiceCreateSerializer,
+    UiProjectParameterSerializer,
 )
 from .operation_logger import log_operation
 
@@ -217,6 +217,32 @@ class ElementViewSet(viewsets.ModelViewSet):
         # 记录操作（在删除前记录）
         log_operation('delete', 'element', instance.id, instance.name, self.request.user)
         instance.delete()
+
+    @action(detail=False, methods=['post'], url_path='batch-delete')
+    def batch_delete(self, request):
+        """批量删除元素"""
+        try:
+            ids = request.data.get('ids', [])
+            if not ids:
+                return Response({'error': '未提供要删除的元素ID'}, status=status.HTTP_400_BAD_REQUEST)
+            if not isinstance(ids, list):
+                return Response({'error': 'ids参数格式错误，应为数组'}, status=status.HTTP_400_BAD_REQUEST)
+
+            queryset = self.get_queryset()
+            elements_to_delete = queryset.filter(id__in=ids)
+            if not elements_to_delete.exists():
+                return Response({'error': '未找到可删除的元素或没有权限删除'}, status=status.HTTP_404_NOT_FOUND)
+
+            for elem in elements_to_delete:
+                log_operation('delete', 'element', elem.id, elem.name, request.user)
+
+            deletable_ids = list(elements_to_delete.values_list('id', flat=True))
+            deleted_count = Element.objects.filter(id__in=deletable_ids).delete()[0]
+
+            return Response({'message': f'成功删除 {deleted_count} 个元素', 'deleted_count': deleted_count})
+        except Exception as e:
+            logger.error(f"批量删除元素失败: {str(e)}", exc_info=True)
+            return Response({'error': f'批量删除失败: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'])
     def validate_locator(self, request, pk=None):
@@ -680,24 +706,31 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
     def add_script(self, request, pk=None):
         """向测试套件添加脚本"""
         test_suite = self.get_object()
-        data = request.data
-        data['test_suite'] = pk
-        serializer = TestSuiteScriptSerializer(data=data)
-        if serializer.is_valid():
-            serializer.save()
+        script_id = request.data.get('test_script_id')
+        order = request.data.get('order', 0)
+        try:
+            from .models import TestSuiteScript
+            suite_script = TestSuiteScript.objects.create(
+                test_suite=test_suite,
+                test_script_id=script_id,
+                order=order
+            )
+            serializer = TestSuiteScriptSerializer(suite_script)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['delete'])
-    def remove_script(self, request, pk=None, script_id=None):
+    def remove_script(self, request, pk=None):
         """从测试套件移除脚本"""
         test_suite = self.get_object()
+        script_id = request.data.get('script_id')
         try:
-            suite_script = TestSuiteScript.objects.get(test_suite=test_suite, id=script_id)
+            suite_script = TestSuiteScript.objects.get(test_suite=test_suite, test_script_id=script_id)
             suite_script.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         except TestSuiteScript.DoesNotExist:
-            return Response({'error': '脚本不存在于该测试套件中'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Script not found in this suite'}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['get'])
     def test_cases(self, request, pk=None):
@@ -767,11 +800,12 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
         test_suite = self.get_object()
 
         # 传统模式执行（Playwright/Selenium）
-        # 检查是否包含测试用例
+        # 检查是否包含测试用例或脚本
         test_case_count = test_suite.suite_test_cases.count()
-        if test_case_count == 0:
+        script_count = test_suite.suite_scripts.count()
+        if test_case_count == 0 and script_count == 0:
             return Response({
-                'error': '该测试套件未包含任何测试用例，无法执行'
+                'error': '该测试套件未包含任何测试用例或脚本，无法执行'
             }, status=status.HTTP_400_BAD_REQUEST)
 
         engine = request.data.get('engine', 'playwright')
@@ -795,43 +829,28 @@ class TestSuiteViewSet(viewsets.ModelViewSet):
         # 记录运行操作
         log_operation('run', 'suite', test_suite.id, test_suite.name, request.user)
 
-        # 在后台线程中执行测试
-        import threading
-        import traceback
-        from .test_executor import TestExecutor
+        # 提交到 Celery 任务队列执行（原来是裸线程 threading.Thread，
+        # 没有并发上限；现在交给任务队列，worker 并发数可控、可独立扩容）
+        from .tasks import execute_test_suite_task
 
-        def run_test():
-            try:
-                print(f"[测试套件] 开始执行: {test_suite.name} (ID: {test_suite.id})")
-                print(f"[测试套件] 配置: engine={engine}, browser={browser}, headless={headless}")
-
-                executor = TestExecutor(
-                    test_suite=test_suite,
-                    engine=engine,
-                    browser=browser,
-                    headless=headless,
-                    executed_by=request.user,
-                    remote_service=remote_service
-                )
-                executor.run()
-
-                print(f"[测试套件] 执行完成: {test_suite.name}")
-            except Exception as e:
-                print(f"[测试套件] 执行异常: {test_suite.name}")
-                print(f"[测试套件] 错误: {str(e)}")
-                traceback.print_exc()
-
-                # 更新套件状态为失败
-                try:
-                    test_suite.execution_status = 'failed'
-                    test_suite.save()
-                    print(f"[测试套件] 已更新状态为失败")
-                except Exception as save_error:
-                    print(f"[测试套件] 更新状态失败: {save_error}")
-
-        # 启动后台线程执行测试
-        thread = threading.Thread(target=run_test, daemon=False)
-        thread.start()
+        try:
+            execute_test_suite_task.delay(
+                suite_id=test_suite.id,
+                engine=engine,
+                browser=browser,
+                headless=headless,
+                user_id=request.user.id,
+                remote_service_id=remote_service.id if remote_service else None,
+            )
+        except Exception as e:
+            # 提交失败（比如 Redis/broker 不可用）：回滚状态，
+            # 避免套件永久卡在 "running"，谁都不会再去把它改回来
+            test_suite.execution_status = 'failed'
+            test_suite.save()
+            logger.error(f'提交测试套件执行任务失败: suite_id={test_suite.id}, error={e}')
+            return Response({
+                'error': f'提交执行任务失败，请检查任务队列服务是否正常: {e}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({
             'message': '测试套件开始执行',
@@ -875,13 +894,50 @@ class TestExecutionViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
+class UiProjectParameterViewSet(viewsets.ModelViewSet):
+    """项目参数 CRUD
+
+    参数按项目管理，测试步骤的输入值/断言值、项目的 base_url 里填 "{{参数名}}"
+    引用，执行时由 apps/ui_automation/parameter_resolver.py 现查这张表替换成真实值。
+    """
+    serializer_class = UiProjectParameterSerializer
+    filterset_fields = ['project']
+
+    def get_queryset(self):
+        return UiProjectParameter.objects.all()
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+
 class RemoteBrowserServiceViewSet(viewsets.ModelViewSet):
     """远程浏览器服务配置 CRUD"""
     serializer_class = RemoteBrowserServiceSerializer
-    filterset_fields = ['project', 'service_type', 'is_active']
+    filterset_fields = ['project', 'service_type']
 
     def get_queryset(self):
-        return RemoteBrowserService.objects.all()
+        queryset = RemoteBrowserService.objects.all()
+
+        # is_active 从 filterset_fields 里挪出来手动处理：前端传的是 JS 布尔值
+        # true/false，交给 DjangoFilterBackend 自动生成的 BooleanFilter 解析查询字符串
+        # 里的 "true"/"false" 时，不同版本/配置下有过解析不稳定的情况，导致执行页面
+        # 的"远程服务"下拉框传了 is_active=true 却仍然把已停用（is_active=false）的
+        # 服务也返回回去。这里直接读原始查询参数自己判断，不依赖 filterset 那套自动
+        # 推断逻辑，保证"只要传了 is_active"就一定按这个值严格过滤。
+        is_active_param = self.request.query_params.get('is_active')
+        if is_active_param is not None:
+            queryset = queryset.filter(is_active=is_active_param.strip().lower() in ('true', '1', 'yes'))
+
+        # online=true：只要真的还在按心跳周期上报的服务（last_heartbeat 落在阈值窗口
+        # 内），is_active=True 但客户端早就异常退出的"僵尸记录"不会被返回。跟 is_active
+        # 一样直接读原始查询参数，不走 filterset（is_online 是 @property，不是真实列，
+        # DjangoFilterBackend 也过滤不了它）。
+        online_param = self.request.query_params.get('online')
+        if online_param is not None and online_param.strip().lower() in ('true', '1', 'yes'):
+            threshold = timezone.now() - timedelta(seconds=RemoteBrowserService.HEARTBEAT_ONLINE_THRESHOLD_SECONDS)
+            queryset = queryset.filter(last_heartbeat__gte=threshold)
+
+        return queryset
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -890,6 +946,104 @@ class RemoteBrowserServiceViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
+
+    @action(detail=False, methods=['post'])
+    def register(self, request):
+        """远程浏览器客户端自注册接口
+
+        供部署在远程机器（如机器B）上的客户端脚本调用：客户端启动时携带自己的
+        project/name/service_type/url 等信息 POST 到这个接口，后端按 (project, name)
+        做 upsert —— 已存在同名记录就更新连接信息，不存在就新建，避免客户端每次
+        重启都在配置中心里堆出重复记录。客户端优雅退出时也可以再调一次、把
+        is_active 设为 false，主动标记自己下线。
+        """
+        project_id = request.data.get('project')
+        name = request.data.get('name')
+        service_type = request.data.get('service_type')
+        url = request.data.get('url')
+
+        missing = [f for f in ('project', 'name', 'service_type', 'url') if not request.data.get(f)]
+        if missing:
+            return Response(
+                {'error': f"缺少必填字段: {', '.join(missing)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        valid_types = dict(RemoteBrowserService.SERVICE_TYPE_CHOICES)
+        if service_type not in valid_types:
+            return Response(
+                {'error': f"不支持的 service_type: {service_type}，可选值: {list(valid_types)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            project = UiProject.objects.get(id=project_id)
+        except UiProject.DoesNotExist:
+            return Response({'error': '项目不存在'}, status=status.HTTP_404_NOT_FOUND)
+        except (TypeError, ValueError):
+            return Response({'error': 'project 参数不合法'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # upsert 的定位键是 (project, name, service_type) 而不是只有 (project, name)：
+        # 同一个客户端进程常见会同时启用 Playwright 和 Selenium 两种服务类型，如果
+        # 两边配的是同一个 service_name（比如都用默认的"主机名(IP)"，不带任何类型
+        # 后缀——前端下拉框本来就会在展示时额外拼上服务类型，名字里不需要再重复），
+        # 只按 (project, name) 定位会导致后注册的那个把先注册的直接覆盖掉，数据库里
+        # 只剩一条记录，另一个服务类型的连接信息就丢了。加上 service_type 就能让
+        # 两条记录并存，互不干扰。
+        service = RemoteBrowserService.objects.filter(
+            project=project, name=name, service_type=service_type,
+        ).first()
+        created = service is None
+        if created:
+            service = RemoteBrowserService(project=project, name=name, created_by=request.user)
+
+        service.service_type = service_type
+        service.url = url
+        if 'capabilities' in request.data:
+            service.capabilities = request.data.get('capabilities') or {}
+        if 'auth_config' in request.data:
+            service.auth_config = request.data.get('auth_config') or {}
+        service.is_active = request.data.get('is_active', True)
+        # 注册本身就是一次"我还活着"的信号，顺带算一次心跳，不用等客户端下一次定时
+        # 上报——否则刚注册完的服务要等最多一个心跳周期才会被认成在线。客户端主动
+        # 标记自己下线（is_active=False）时不算心跳，避免"已经下线"却又被认成在线。
+        if service.is_active:
+            service.last_heartbeat = timezone.now()
+        service.save()
+
+        serializer = RemoteBrowserServiceSerializer(service)
+        return Response(
+            {'created': created, 'service': serializer.data},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    @action(detail=False, methods=['post'])
+    def heartbeat(self, request):
+        """远程客户端心跳接口：客户端常驻运行期间按固定间隔调用，只更新 last_heartbeat。
+
+        跟 register 分开是因为心跳需要频繁调用（默认 30 秒一次），只更新一个时间戳，
+        不用像 register 那样每次都带上完整的 url/capabilities/auth_config——payload
+        更小，调用更频繁也没什么开销。
+
+        按 (project, name) 定位记录，跟 register 用的是同一套身份（客户端配置里的
+        project_id + service_name），不需要客户端记住数据库自增 id。
+        """
+        project = request.data.get('project')
+        name = request.data.get('name')
+        if not project or not name:
+            return Response(
+                {'error': '缺少必填字段: project, name'}, status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        updated = RemoteBrowserService.objects.filter(project=project, name=name).update(
+            last_heartbeat=timezone.now(),
+        )
+        if not updated:
+            return Response(
+                {'error': '未找到匹配的远程浏览器服务，请先调用 /register/ 完成注册'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response({'status': 'ok'})
 
     @action(detail=True, methods=['post'])
     def test_connection(self, request, pk=None):
@@ -912,34 +1066,39 @@ class RemoteBrowserServiceViewSet(viewsets.ModelViewSet):
                     await pw.stop()
                 asyncio.run(_test())
             elif service.service_type == 'playwright_cdp':
+                # service.url 现在是远程客户端的"控制接口"地址，不是一个已经在跑的
+                # CDP 端点——不能再直接 connect_over_cdp(service.url)。跟真实执行走
+                # 同一条路径：BrowserConnectionFactory 会先 POST /launch 让远程客户端
+                # 现开一个浏览器，拿到这次专属的 CDP 地址再连上去，测完用
+                # close_playwright_browser 通知远程客户端 /close 把它关掉。
+                # 这样"测试连接"顺带也验证了远程客户端按需启动这条链路本身是通的，
+                # 比之前只是连一下已经常驻的浏览器更能反映真实情况。
                 import asyncio
                 from playwright.async_api import async_playwright
+                from .browser_factory import BrowserConnectionFactory, close_playwright_browser
+
                 async def _test():
                     pw = await async_playwright().start()
-                    browser = await pw.chromium.connect_over_cdp(endpoint_url=service.url)
-                    await browser.close()
-                    await pw.stop()
+                    try:
+                        browser = await BrowserConnectionFactory.create_playwright_browser(
+                            playwright_instance=pw,
+                            browser_type='chromium',
+                            headless=True,
+                            remote_service=service,
+                        )
+                        await close_playwright_browser(browser)
+                    finally:
+                        await pw.stop()
                 asyncio.run(_test())
             return Response({'status': 'success', 'message': '连接成功'})
         except Exception as e:
             return Response({'status': 'error', 'message': str(e)}, status=400)
 
 
-class ScreenshotViewSet(viewsets.ModelViewSet):
-    queryset = Screenshot.objects.all()
-    permission_classes = [IsAuthenticated]
-    serializer_class = ScreenshotSerializer
-    filter_backends = [DjangoFilterBackend]
-    filterset_fields = ['execution']
-
-    def get_queryset(self):
-        # 只显示用户有权限访问的项目的截图
-        user = self.request.user
-        accessible_projects = UiProject.objects.filter(
-            models.Q(owner=user) | models.Q(members=user)
-        ).distinct()
-        executions = TestExecution.objects.filter(project__in=accessible_projects)
-        return Screenshot.objects.filter(execution__in=executions)
+# 注：ScreenshotViewSet（对应下面已删除的 Screenshot 模型）已删除——全代码库
+# 没有任何地方调用过 Screenshot.objects.create()，实际截图走的是
+# TestCaseExecution.screenshots / AIExecutionRecord.screenshots_sequence 这两个
+# JSONField，Screenshot 模型是从未被使用过的死代码。见对应的迁移文件。
 
 
 class TestCaseViewSet(viewsets.ModelViewSet):
@@ -1010,6 +1169,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                         wait_time=step_data.get('wait_time', 1000),
                         assert_type=step_data.get('assert_type', ''),
                         assert_value=step_data.get('assert_value', ''),
+                        step_parameters=step_data.get('step_parameters', {}),
                         description=step_data.get('description', '')
                     )
                     created_count += 1
@@ -1032,6 +1192,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                 description=test_case.description,
                 priority=test_case.priority,
                 status=test_case.status,
+                case_parameters=test_case.case_parameters,
                 created_by=request.user
             )
 
@@ -1048,6 +1209,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                     wait_time=step.wait_time,
                     assert_type=step.assert_type,
                     assert_value=step.assert_value,
+                    step_parameters=step.step_parameters,
                     description=step.description
                 ))
 
@@ -1111,6 +1273,7 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                         wait_time=step_data.get('wait_time', 1000),
                         assert_type=step_data.get('assert_type', ''),
                         assert_value=step_data.get('assert_value', ''),
+                        step_parameters=step_data.get('step_parameters', {}),
                         description=step_data.get('description', '')
                     )
                     created_count += 1
@@ -1293,6 +1456,43 @@ class TestCaseViewSet(viewsets.ModelViewSet):
             # 返回一个简单的错误占位符
             return None
 
+    @action(detail=True, methods=['post'], url_path='generate-script')
+    def generate_script(self, request, pk=None):
+        """从测试用例生成 Playwright/Selenium 自动化脚本"""
+        test_case = self.get_object()
+        framework = request.data.get('framework', 'playwright')
+        language = request.data.get('language', 'python')
+
+        steps = test_case.steps.select_related(
+            'element', 'element__locator_strategy'
+        ).order_by('step_number')
+
+        if not steps.exists():
+            return Response({'error': '该用例没有步骤，无法生成脚本'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from .script_generator import generate_script as gen_script
+        code = gen_script(test_case, steps, framework=framework, language=language)
+
+        script_type = 'CODE'
+        script = TestScript.objects.create(
+            project=test_case.project,
+            name=f'{test_case.name} - {framework}',
+            description=f'由测试用例「{test_case.name}」自动生成',
+            script_type=script_type,
+            content=code,
+            language=language,
+            framework=framework,
+        )
+
+        return Response({
+            'script_id': script.id,
+            'script_name': script.name,
+            'framework': framework,
+            'language': language,
+            'content': code,
+            'step_count': steps.count(),
+        })
+
     @action(detail=True, methods=['post'])
     def run(self, request, pk=None):
         """运行单个测试用例 - 支持选择Playwright或Selenium执行引擎"""
@@ -1359,7 +1559,6 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                     }, status=status.HTTP_400_BAD_REQUEST)
             else:
                 import asyncio
-                import threading
                 from .playwright_engine import PlaywrightTestEngine
 
             start_time = time.time()
@@ -1425,7 +1624,10 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                     headless = request.data.get('headless', False)
 
                     # 创建Selenium引擎实例
-                    engine = SeleniumTestEngine(browser_type=browser_type, headless=headless, remote_service=remote_service)
+                    engine = SeleniumTestEngine(
+                        browser_type=browser_type, headless=headless, remote_service=remote_service,
+                        project_id=test_case.project_id,
+                    )
 
                     try:
                         # 启动浏览器
@@ -1607,11 +1809,10 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                         engine.stop()
                         execution_logs.append("✓ 浏览器已关闭")
 
-                # 在独立线程中运行Selenium测试
-                import threading
-                test_thread = threading.Thread(target=run_test_selenium)
-                test_thread.start()
-                test_thread.join()
+                # 通过有界线程池运行 Selenium 测试（替代原来无限制的 threading.Thread，
+                # 见 concurrency.py：多个调试请求同时进来时会排队而不是无限起浏览器进程）
+                from .concurrency import run_bounded
+                run_bounded(run_test_selenium).result()
 
             else:
                 # Playwright异步执行
@@ -1630,7 +1831,10 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                         headless = request.data.get('headless', False)
 
                         # 创建Playwright引擎实例
-                        engine = PlaywrightTestEngine(browser_type=browser_type, headless=headless, remote_service=remote_service)
+                        engine = PlaywrightTestEngine(
+                            browser_type=browser_type, headless=headless, remote_service=remote_service,
+                            project_id=test_case.project_id,
+                        )
 
                         try:
                             # 启动浏览器
@@ -1822,11 +2026,9 @@ class TestCaseViewSet(viewsets.ModelViewSet):
                     finally:
                         loop.close()
 
-                # 在独立线程中运行Playwright测试
-                import threading
-                test_thread = threading.Thread(target=run_test_in_thread)
-                test_thread.start()
-                test_thread.join()  # 等待测试完成
+                # 通过有界线程池运行 Playwright 测试（同上，替代无限制的 threading.Thread）
+                from .concurrency import run_bounded
+                run_bounded(run_test_in_thread).result()
 
             # 计算总执行时间
             total_time = round(time.time() - start_time, 2)
@@ -2136,45 +2338,21 @@ class UiScheduledTaskViewSet(viewsets.ModelViewSet):
                 test_suite.execution_status = 'running'
                 test_suite.save()
 
-                # 在后台线程中执行测试
-                import threading
-                from .test_executor import TestExecutor
-
-                def run_test():
-                    try:
-                        executor = TestExecutor(
-                            test_suite=test_suite,
-                            engine=task.engine,
-                            browser=task.browser,
-                            headless=task.headless,
-                            executed_by=task.created_by
-                        )
-                        executor.run()
-
-                        # 更新任务执行结果
-                        task.successful_runs += 1
-                        task.last_result = {'status': 'success', 'message': '测试套件执行成功'}
-                        task.error_message = ''
-                        task.save()
-
-                        # 发送成功通知
-                        self._send_task_notification(task, success=True)
-
-                    except Exception as e:
-                        task.failed_runs += 1
-                        task.last_result = {'status': 'failed', 'message': str(e)}
-                        task.error_message = str(e)
-                        test_suite.execution_status = 'failed'
-                        test_suite.save()
-                        task.save()
-
-                        # 发送失败通知
-                        self._send_task_notification(task, success=False)
-
-                # 启动后台线程执行测试
-                thread = threading.Thread(target=run_test)
-                thread.daemon = True
-                thread.start()
+                # 提交到 Celery 任务队列执行（原来是裸线程，无并发上限；
+                # 实际执行 + 成功/失败统计 + 通知发送都在 run_scheduled_task_now_task 里，
+                # 与 execute_test_suite_task 分开是因为这里还需要维护 task.successful_runs
+                # 等定时任务专属的统计字段和通知逻辑）
+                from .tasks import run_scheduled_task_now_task
+                try:
+                    run_scheduled_task_now_task.delay(task.id)
+                except Exception as e:
+                    # 提交失败时回滚套件状态，避免永久卡在 "running"
+                    test_suite.execution_status = 'failed'
+                    test_suite.save()
+                    logger.error(f'提交定时任务(套件)执行失败: task_id={task.id}, error={e}')
+                    return Response({
+                        'error': f'提交执行任务失败，请检查任务队列服务是否正常: {e}'
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
                 log_operation('run', 'scheduled_task', task.id, task.name, request.user)
 
@@ -2205,309 +2383,17 @@ class UiScheduledTaskViewSet(viewsets.ModelViewSet):
                         'error': '找不到配置的测试用例'
                     }, status=status.HTTP_400_BAD_REQUEST)
 
-                # 在后台线程中执行测试用例
-                import threading
-
-                def run_test_cases():
-                    """在后台线程中执行测试用例"""
-                    success_count = 0
-                    failed_count = 0
-
-                    try:
-                        for test_case in test_cases:
-                            # 创建执行记录
-                            execution = TestCaseExecution.objects.create(
-                                test_case=test_case,
-                                project=task.project,
-                                execution_source='scheduled',
-                                status='running',
-                                engine=task.engine,
-                                browser=task.browser,
-                                headless=task.headless,
-                                created_by=task.created_by,
-                                started_at=timezone.now()
-                            )
-
-                            # 实际执行测试用例
-                            try:
-                                logger.info(f"开始执行定时任务的测试用例: {test_case.name} (ID: {test_case.id})")
-
-                                start_time = time.time()
-
-                                # 获取测试用例的所有步骤
-                                test_steps = list(test_case.steps.all().order_by('step_number'))
-
-                                # 预先获取所有步骤的数据
-                                steps_data = []
-                                for step in test_steps:
-                                    step_data = {
-                                        'step': step,
-                                        'action_type': step.action_type,
-                                        'description': step.description,
-                                        'input_value': step.input_value,
-                                        'wait_time': step.wait_time,
-                                        'assert_type': step.assert_type,
-                                        'assert_value': step.assert_value,
-                                    }
-
-                                    if step.element:
-                                        step_data['element_data'] = {
-                                            'locator_strategy': step.element.locator_strategy.name if step.element.locator_strategy else 'css',
-                                            'locator_value': step.element.locator_value,
-                                            'name': step.element.name,
-                                            'wait_timeout': step.element.wait_timeout,
-                                            'force_action': step.element.force_action
-                                        }
-                                    else:
-                                        step_data['element_data'] = None
-
-                                    steps_data.append(step_data)
-
-                                # 存储步骤执行结果和截图
-                                step_results = []
-                                screenshots = []
-                                execution_logs = []
-                                execution_result = {'status': 'passed', 'error_message': None}
-
-                                # 根据引擎类型执行
-                                if task.engine == 'selenium':
-                                    from .selenium_engine import SeleniumTestEngine
-
-                                    # 检查浏览器是否可用
-                                    is_available, error_msg = SeleniumTestEngine.check_browser_available(task.browser)
-                                    if not is_available:
-                                        execution.status = 'failed'
-                                        execution.error_message = error_msg
-                                        execution.execution_logs = json.dumps([{
-                                            'step_number': 0,
-                                            'action_type': '浏览器检查',
-                                            'description': '执行前浏览器环境检查',
-                                            'success': False,
-                                            'error': error_msg
-                                        }], ensure_ascii=False)
-                                        execution.finished_at = timezone.now()
-                                        execution.save()
-                                        failed_count += 1
-                                        continue
-
-                                    # 创建Selenium引擎实例并执行
-                                    engine = SeleniumTestEngine(browser_type=task.browser, headless=task.headless)
-
-                                    try:
-                                        # 启动浏览器
-                                        engine.start()
-                                        execution_logs.append("✓ 浏览器启动成功")
-
-                                        # 导航到项目基础URL
-                                        if test_case.project.base_url:
-                                            success, nav_log = engine.navigate(test_case.project.base_url)
-                                            execution_logs.append(nav_log)
-                                            if not success:
-                                                execution_result['status'] = 'failed'
-                                                execution_result['error_message'] = "导航到测试页面失败"
-                                                raise Exception("导航到测试页面失败")
-
-                                        # 执行测试步骤
-                                        for i, step_info in enumerate(steps_data, 1):
-                                            step = step_info['step']
-                                            action_type = step_info['action_type']
-                                            element_data = step_info['element_data']
-
-                                            success, step_log, screenshot_base64 = engine.execute_step(step,
-                                                                                                       element_data or {})
-
-                                            step_results.append({
-                                                'step_number': i,
-                                                'action_type': action_type,
-                                                'description': step_info['description'] or '',
-                                                'success': success,
-                                                'error': None if success else step_log
-                                            })
-
-                                            if not success:
-                                                execution_result['status'] = 'failed'
-                                                execution_result['error_message'] = step_log
-
-                                                if not screenshot_base64:
-                                                    screenshot_base64 = engine.capture_screenshot()
-
-                                                if screenshot_base64:
-                                                    screenshots.append({
-                                                        'url': screenshot_base64,
-                                                        'description': f'步骤 {i} 失败截图',
-                                                        'step_number': i,
-                                                        'timestamp': timezone.now().isoformat()
-                                                    })
-
-                                                break
-
-                                            if action_type == 'screenshot' and screenshot_base64:
-                                                screenshots.append({
-                                                    'url': screenshot_base64,
-                                                    'description': f'步骤 {i}: {step_info["description"] or "手动截图"}',
-                                                    'step_number': i,
-                                                    'timestamp': timezone.now().isoformat()
-                                                })
-
-                                    finally:
-                                        engine.stop()
-
-                                else:  # Playwright
-                                    import asyncio
-                                    from asgiref.sync import sync_to_async
-                                    from .playwright_engine import PlaywrightTestEngine
-
-                                    async def run_playwright_test():
-                                        browser_map = {
-                                            'chrome': 'chromium',
-                                            'firefox': 'firefox',
-                                            'safari': 'webkit'
-                                        }
-                                        browser_type = browser_map.get(task.browser, 'chromium')
-
-                                        engine = PlaywrightTestEngine(browser_type=browser_type, headless=task.headless)
-
-                                        try:
-                                            # 启动浏览器
-                                            await engine.start()
-                                            execution_logs.append("✓ 浏览器启动成功")
-
-                                            # 获取项目基础URL（同步操作）
-                                            base_url = await sync_to_async(lambda: test_case.project.base_url)()
-
-                                            # 导航到项目基础URL
-                                            if base_url:
-                                                success, nav_log = await engine.navigate(base_url)
-                                                execution_logs.append(nav_log)
-                                                if not success:
-                                                    execution_result['status'] = 'failed'
-                                                    execution_result['error_message'] = "导航到测试页面失败"
-                                                    return False
-
-                                            # 执行测试步骤
-                                            for i, step_info in enumerate(steps_data, 1):
-                                                step = step_info['step']
-                                                action_type = step_info['action_type']
-                                                element_data = step_info['element_data']
-
-                                                success, step_log, screenshot_base64 = await engine.execute_step(step,
-                                                                                                                 element_data or {})
-
-                                                step_results.append({
-                                                    'step_number': i,
-                                                    'action_type': action_type,
-                                                    'description': step_info['description'] or '',
-                                                    'success': success,
-                                                    'error': None if success else step_log
-                                                })
-
-                                                if not success:
-                                                    execution_result['status'] = 'failed'
-                                                    execution_result['error_message'] = step_log
-
-                                                    if not screenshot_base64:
-                                                        screenshot_base64 = await engine.capture_screenshot()
-
-                                                    if screenshot_base64:
-                                                        screenshots.append({
-                                                            'url': screenshot_base64,
-                                                            'description': f'步骤 {i} 失败截图',
-                                                            'step_number': i,
-                                                            'timestamp': timezone.now().isoformat()
-                                                        })
-
-                                                    return False
-
-                                                if action_type == 'screenshot' and screenshot_base64:
-                                                    screenshots.append({
-                                                        'url': screenshot_base64,
-                                                        'description': f'步骤 {i}: {step_info["description"] or "手动截图"}',
-                                                        'step_number': i,
-                                                        'timestamp': timezone.now().isoformat()
-                                                    })
-
-                                            return True
-
-                                        finally:
-                                            await engine.stop()
-
-                                    # 在新的事件循环中运行Playwright测试
-                                    loop = asyncio.new_event_loop()
-                                    asyncio.set_event_loop(loop)
-                                    try:
-                                        loop.run_until_complete(run_playwright_test())
-                                    finally:
-                                        loop.close()
-
-                                # 计算执行时间
-                                total_time = round(time.time() - start_time, 2)
-
-                                # 保存执行结果
-                                execution.status = execution_result['status']
-                                execution.error_message = execution_result['error_message'] or ''
-                                execution.execution_logs = json.dumps(step_results, ensure_ascii=False)
-                                execution.execution_time = total_time
-                                execution.screenshots = screenshots
-                                execution.finished_at = timezone.now()
-                                execution.save()
-
-                                if execution.status == 'passed':
-                                    success_count += 1
-                                    logger.info(f"测试用例 {test_case.name} 执行成功")
-                                else:
-                                    failed_count += 1
-                                    logger.warning(f"测试用例 {test_case.name} 执行失败: {execution.error_message}")
-
-                            except Exception as e:
-                                logger.error(f"执行测试用例 {test_case.name} 时发生异常: {str(e)}")
-                                execution.status = 'failed'
-                                execution.error_message = str(e)
-                                execution.finished_at = timezone.now()
-                                execution.save()
-                                failed_count += 1
-
-                        # 更新任务执行结果
-                        if failed_count == 0:
-                            task.successful_runs += 1
-                            task.last_result = {
-                                'status': 'success',
-                                'message': f'执行完成: {success_count}个成功',
-                                'success_count': success_count,
-                                'failed_count': failed_count
-                            }
-                            task.error_message = ''
-                            task.save()
-
-                            # 发送成功通知
-                            self._send_task_notification(task, success=True)
-                        else:
-                            task.failed_runs += 1
-                            task.last_result = {
-                                'status': 'partial',
-                                'message': f'执行完成: {success_count}个成功, {failed_count}个失败',
-                                'success_count': success_count,
-                                'failed_count': failed_count
-                            }
-                            task.error_message = f'{failed_count}个测试用例执行失败'
-                            task.save()
-
-                            # 发送失败通知
-                            self._send_task_notification(task, success=False)
-
-                    except Exception as e:
-                        logger.error(f"执行定时任务测试用例时发生异常: {str(e)}")
-                        task.failed_runs += 1
-                        task.last_result = {'status': 'failed', 'message': str(e)}
-                        task.error_message = str(e)
-                        task.save()
-
-                        # 发送失败通知
-                        self._send_task_notification(task, success=False)
-
-                # 启动后台线程执行测试
-                thread = threading.Thread(target=run_test_cases)
-                thread.daemon = True
-                thread.start()
+                # 提交到 Celery 任务队列执行（原来是裸线程，逻辑完全一致地搬到了
+                # tasks.run_scheduled_task_now_task 里的 TEST_CASE 分支，
+                # 这里不再重复维护一份）
+                from .tasks import run_scheduled_task_now_task
+                try:
+                    run_scheduled_task_now_task.delay(task.id)
+                except Exception as e:
+                    logger.error(f'提交定时任务(用例)执行失败: task_id={task.id}, error={e}')
+                    return Response({
+                        'error': f'提交执行任务失败，请检查任务队列服务是否正常: {e}'
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
                 log_operation('run', 'scheduled_task', task.id, task.name, request.user)
 
@@ -2989,238 +2875,32 @@ class AICaseViewSet(viewsets.ModelViewSet):
             logs="正在分析任务...\n"
         )
 
-        # 异步执行
-        import threading
-        import os
-        from asgiref.sync import sync_to_async
-        from django.db import connection, DatabaseError
-        from .ai_agent import run_full_process_sync
-
-        def run_task():
-            # 注册停止信号
-            STOP_SIGNALS[execution_record.id] = False
-
-            # 关键修复：关闭旧连接，避免子线程共享主线程的连接
-            try:
-                connection.close()
-            except:
-                pass
-
-            # 设置环境变量，允许在后台线程中使用同步 ORM
-            os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
-
-            def safe_save(record, update_fields=None, max_retries=3):
-                """安全的保存方法，带有重试机制"""
-                for attempt in range(max_retries):
-                    try:
-                        record.save(update_fields=update_fields)
-                        return True
-                    except (DatabaseError, Exception) as e:
-                        error_str = str(e)
-                        # 检查是否是MySQL连接错误
-                        if '2006' in error_str or 'MySQL server has gone away' in error_str or '0' == error_str:
-                            if attempt < max_retries - 1:
-                                logger.warning(f"数据库连接失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                                # 关闭旧连接并重试
-                                try:
-                                    connection.close()
-                                except:
-                                    pass
-                                import time
-                                time.sleep(0.5)  # 等待一下再重试
-                                continue
-                            else:
-                                logger.error(f"数据库保存失败，已达最大重试次数: {e}")
-                                raise
-                        else:
-                            # 其他错误直接抛出
-                            logger.error(f"数据库保存失败: {e}")
-                            raise
-                return False
-
-            try:
-                def should_stop():
-                    return STOP_SIGNALS.get(execution_record.id, False)
-
-                async def on_analysis_complete(planned_tasks):
-                    execution_record.planned_tasks = planned_tasks
-                    execution_record.logs += "任务分析完成，开始执行...\n"
-                    await sync_to_async(safe_save)(execution_record, update_fields=['planned_tasks', 'logs'])
-
-                async def on_step_update(step_info):
-                    try:
-                        # 处理日志
-                        if step_info.get('type') == 'log':
-                            content = step_info.get('content')
-                            if content:
-                                execution_record.logs += content
-                                await sync_to_async(safe_save)(execution_record, update_fields=['logs'])
-                            return
-
-                        # 处理任务状态
-                        task_id = step_info.get('task_id')
-                        status = step_info.get('status')
-                        if task_id and status:
-                            updated = False
-                            for task in execution_record.planned_tasks:
-                                if task['id'] == task_id:
-                                    task['status'] = status
-                                    updated = True
-                                    break
-                            if updated:
-                                await sync_to_async(safe_save)(execution_record, update_fields=['planned_tasks'])
-                    except Exception as e:
-                        logger.error(f"更新步骤状态失败: {e}")
-
-                history = run_full_process_sync(
-                    ai_case.task_description,
-                    analysis_callback=on_analysis_complete,
-                    step_callback=on_step_update,
-                    should_stop=should_stop
-                )
-
-                # 检查是否是手动停止
-                if should_stop():
-                    execution_record.status = 'stopped'
-                    execution_record.logs += "\n[System] 任务已由用户停止。"
-                else:
-                    # 更新成功状态
-                    execution_record.status = 'passed'
-                    execution_record.logs += "\n执行完成。"
-
-                    # 记录任务完成统计信息
-                    if execution_record.planned_tasks:
-                        total_tasks = len(execution_record.planned_tasks)
-                        completed_tasks = len(
-                            [t for t in execution_record.planned_tasks if t.get('status') == 'completed'])
-                        pending_tasks = len([t for t in execution_record.planned_tasks if t.get('status') == 'pending'])
-                        logger.info(
-                            f"🏁 Task completion summary: {completed_tasks}/{total_tasks} tasks completed, {pending_tasks} pending")
-
-                execution_record.end_time = timezone.now()
-                execution_record.duration = (execution_record.end_time - execution_record.start_time).total_seconds()
-
-                # 格式化 history 为日志 (如果不是停止状态)
-                steps = []
-                if history:
-                    if hasattr(history, 'steps'):
-                        steps = [extract_step_info(s, i) for i, s in enumerate(history.steps)]
-
-                execution_record.steps_completed = steps
-
-                # 自动标记已完成的任务
-                if execution_record.planned_tasks:
-                    self._auto_mark_completed_tasks(execution_record)
-
-                # 处理GIF录制文件
-                self._process_gif_recording(execution_record, history)
-
-                safe_save(execution_record)
-
-            except Exception as e:
-                execution_record.status = 'failed'
-                execution_record.end_time = timezone.now()
-                execution_record.duration = (execution_record.end_time - execution_record.start_time).total_seconds()
-                execution_record.logs += f"\n执行出错: {str(e)}"
-                try:
-                    safe_save(execution_record)
-                except:
-                    # 如果保存失败，至少尝试保存基本信息
-                    logger.error(f"保存失败状态时出错: {e}")
-                    pass
-            finally:
-                # 清理停止信号
-                if execution_record.id in STOP_SIGNALS:
-                    del STOP_SIGNALS[execution_record.id]
-
-        thread = threading.Thread(target=run_task)
-        thread.daemon = True
-        thread.start()
+        # 提交到 Celery 的 ai_automation 队列执行（原来是裸线程；单独的队列是为了
+        # AI 任务的资源隔离，端口冲突问题已经在 ai_base.py 里修复，见 tasks.py 顶部说明。
+        # 停止信号改成了纯数据库状态，见 stop_task 和 tasks.run_ai_case_task）
+        from .tasks import run_ai_case_task
+        try:
+            run_ai_case_task.delay(execution_record.id, ai_case.id)
+        except Exception as e:
+            # 提交失败时把记录标记为失败，避免永久卡在 "running"
+            execution_record.status = 'failed'
+            execution_record.logs += f"\n[System] 提交执行任务失败: {e}"
+            execution_record.save()
+            logger.error(f'提交 AI 用例执行任务失败: execution_id={execution_record.id}, error={e}')
+            return Response({
+                'error': f'提交执行任务失败，请检查任务队列服务是否正常: {e}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({
             'message': 'AI 用例开始执行',
             'execution_id': execution_record.id
         })
 
-    def _process_gif_recording(self, execution_record, history):
-        """
-        处理GIF录制文件
-        在执行完成后查找生成的GIF文件并保存路径到数据库
-        """
-        try:
-            import os
-            from django.conf import settings
-            from datetime import datetime
-
-            # browser-use 默认生成的GIF文件名（固定为agent_history.gif）
-            default_gif_path = os.path.join(os.getcwd(), 'agent_history.gif')
-
-            # 如果找到GIF文件，移动到media/ai_recording目录并重命名
-            if os.path.exists(default_gif_path):
-                import shutil
-
-                # 创建录制文件目录
-                gif_dir = os.path.join(settings.MEDIA_ROOT, 'ai_recording')
-                os.makedirs(gif_dir, exist_ok=True)
-
-                # 生成新的文件名：用例名称+年月日时分秒
-                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-                # 清理用例名称中的非法字符
-                safe_case_name = "".join(
-                    [c if c.isalnum() or c in (' ', '_', '-') else '_' for c in execution_record.case_name])
-                new_gif_filename = f"{safe_case_name}_{timestamp}.gif"
-                new_gif_path = os.path.join(gif_dir, new_gif_filename)
-
-                # 移动并重命名文件
-                shutil.move(default_gif_path, new_gif_path)
-
-                # 保存相对路径到数据库（使用正斜杠，确保跨平台兼容）
-                relative_path = f'media/ai_recording/{new_gif_filename}'
-                execution_record.gif_path = relative_path
-
-                logger.info(f"✅ GIF recording saved to: {relative_path}")
-            else:
-                logger.warning(f"⚠️ GIF file not found at: {default_gif_path}")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to process GIF recording: {e}")
-
-    def _auto_mark_completed_tasks(self, execution_record):
-        """
-        自动标记已完成的任务
-        通过分析执行历史和当前任务状态，自动标记那些已经执行但未被标记完成的任务
-        """
-        try:
-            # 记录初始状态
-            initial_completed = 0
-            initial_pending = 0
-            if execution_record.planned_tasks:
-                initial_completed = len([t for t in execution_record.planned_tasks if t.get('status') == 'completed'])
-                initial_pending = len([t for t in execution_record.planned_tasks if t.get('status') == 'pending'])
-                logger.info(f"📊 Before auto-mark: {initial_completed} completed, {initial_pending} pending tasks")
-
-            # 如果执行成功，标记所有任务为完成
-            if execution_record.status == 'passed' and execution_record.planned_tasks:
-                auto_marked_count = 0
-                for task in execution_record.planned_tasks:
-                    # 只对标记为pending的任务进行处理
-                    if task.get('status') == 'pending':
-                        task['status'] = 'completed'
-                        auto_marked_count += 1
-                        logger.info(f"🔒 Auto-marked task {task['id']} as completed")
-
-                if auto_marked_count > 0:
-                    logger.info(f"✨ Auto-marked {auto_marked_count} tasks as completed")
-                else:
-                    logger.info("📋 No pending tasks needed auto-marking")
-
-            # TODO: 可以添加更智能的分析逻辑来识别部分完成的任务
-
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to auto-mark completed tasks: {e}")
-
-
-# 全局停止信号字典 {execution_id: bool}
-STOP_SIGNALS = {}
+    # 注：_process_gif_recording / _auto_mark_completed_tasks 已挪到
+    # apps/ui_automation/ai_execution_helpers.py 作为模块级函数（这两个方法
+    # 原本就不依赖 self.request/self.queryset，只是被误放进了 ViewSet 里，
+    # 之前 AICaseViewSet 和 AIExecutionRecordViewSet 各自维护了一份逐字节相同
+    # 的拷贝）。Celery 任务里直接 import 调用，不再需要"裸实例化 ViewSet"。
 
 
 class AIExecutionRecordViewSet(viewsets.ModelViewSet):
@@ -3308,180 +2988,20 @@ class AIExecutionRecordViewSet(viewsets.ModelViewSet):
             logs="正在分析任务...\n"
         )
 
-        # 异步执行
-        import threading
-        import os
-        from asgiref.sync import sync_to_async
-        from django.db import connection, DatabaseError
-        from .ai_agent import run_full_process_sync
-
-        def run_task():
-            # 注册停止信号
-            STOP_SIGNALS[execution_record.id] = False
-
-            # 关键修复：关闭旧连接，避免子线程共享主线程的连接
-            try:
-                connection.close()
-            except:
-                pass
-
-            # 设置环境变量，允许在后台线程中使用同步 ORM
-            os.environ['DJANGO_ALLOW_ASYNC_UNSAFE'] = 'true'
-
-            def safe_save(record, update_fields=None, max_retries=3):
-                """安全的保存方法，带有重试机制"""
-                for attempt in range(max_retries):
-                    try:
-                        record.save(update_fields=update_fields)
-                        return True
-                    except (DatabaseError, Exception) as e:
-                        error_str = str(e)
-                        # 检查是否是MySQL连接错误
-                        if '2006' in error_str or 'MySQL server has gone away' in error_str or '0' == error_str:
-                            if attempt < max_retries - 1:
-                                logger.warning(f"数据库连接失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                                # 关闭旧连接并重试
-                                try:
-                                    connection.close()
-                                except:
-                                    pass
-                                import time
-                                time.sleep(0.5)  # 等待一下再重试
-                                continue
-                            else:
-                                logger.error(f"数据库保存失败，已达最大重试次数: {e}")
-                                raise
-                        else:
-                            # 其他错误直接抛出
-                            logger.error(f"数据库保存失败: {e}")
-                            raise
-                return False
-
-            try:
-                # 定义异步安全的 should_stop
-                async def should_stop_async():
-                    # 优先检查内存信号
-                    if STOP_SIGNALS.get(execution_record.id, False):
-                        return True
-                    # 兜底检查数据库状态 (使用 sync_to_async 避免异步上下文错误)
-                    await sync_to_async(execution_record.refresh_from_db)()
-                    return execution_record.status == 'stopped'
-
-                # 定义同步版本的 should_stop 用于最后检查
-                def should_stop_sync():
-                    if STOP_SIGNALS.get(execution_record.id, False):
-                        return True
-                    execution_record.refresh_from_db()
-                    return execution_record.status == 'stopped'
-
-                async def on_analysis_complete(planned_tasks):
-                    execution_record.planned_tasks = planned_tasks
-                    execution_record.logs += "任务分析完成，开始执行...\n"
-                    await sync_to_async(safe_save)(execution_record, update_fields=['planned_tasks', 'logs'])
-
-                async def on_step_update(step_info):
-                    try:
-                        # 处理日志
-                        if step_info.get('type') == 'log':
-                            content = step_info.get('content')
-                            if content:
-                                execution_record.logs += content
-                                # 立即保存到数据库，确保前端轮询能看到最新日志
-                                await sync_to_async(safe_save)(execution_record, update_fields=['logs'])
-                            return
-
-                        # 处理任务状态
-                        task_id = step_info.get('task_id')
-                        status = step_info.get('status')
-                        logger.info(f"DEBUG: on_step_update received: task_id={task_id}, status={status}")
-
-                        if task_id and status:
-                            updated = False
-                            if execution_record.planned_tasks:
-                                for task in execution_record.planned_tasks:
-                                    # 确保类型一致进行比较
-                                    if str(task['id']) == str(task_id):
-                                        old_status = task.get('status', 'pending')
-                                        task['status'] = status
-                                        updated = True
-                                        logger.info(f"DEBUG: Updated task {task_id} from {old_status} to {status}")
-                                        break
-                            if updated:
-                                # 立即保存到数据库，确保前端轮询能看到最新状态
-                                await sync_to_async(safe_save)(execution_record, update_fields=['planned_tasks'])
-                            else:
-                                logger.warning(
-                                    f"DEBUG: Task ID {task_id} not found in planned_tasks: {execution_record.planned_tasks}")
-                    except Exception as e:
-                        logger.error(f"更新步骤状态失败: {e}", exc_info=True)
-
-                history = run_full_process_sync(
-                    task_description,
-                    analysis_callback=on_analysis_complete,
-                    step_callback=on_step_update,
-                    should_stop=should_stop_async,  # 传递异步版本
-                    execution_mode=execution_mode,
-                    enable_gif=enable_gif,  # 传递GIF录制开关
-                    case_name=task_description[:50] if task_description else "Adhoc Task"  # 传递用例名称用于GIF文件命名
-                )
-
-                # 检查是否是手动停止 (使用同步版本)
-                if should_stop_sync():
-                    execution_record.status = 'stopped'
-                    execution_record.logs += "\n[System] 任务已由用户停止。"
-                else:
-                    # 更新成功状态
-                    execution_record.status = 'passed'
-                    execution_record.logs += "\n执行完成。"
-
-                    # 记录任务完成统计信息
-                    if execution_record.planned_tasks:
-                        total_tasks = len(execution_record.planned_tasks)
-                        completed_tasks = len(
-                            [t for t in execution_record.planned_tasks if t.get('status') == 'completed'])
-                        pending_tasks = len([t for t in execution_record.planned_tasks if t.get('status') == 'pending'])
-                        logger.info(
-                            f"🏁 Task completion summary: {completed_tasks}/{total_tasks} tasks completed, {pending_tasks} pending")
-
-                execution_record.end_time = timezone.now()
-                execution_record.duration = (execution_record.end_time - execution_record.start_time).total_seconds()
-
-                # 格式化 history 为日志 (如果不是停止状态)
-                steps = []
-                if history:
-                    if hasattr(history, 'steps'):
-                        steps = [extract_step_info(s, i) for i, s in enumerate(history.steps)]
-
-                execution_record.steps_completed = steps
-
-                # 自动标记已完成的任务
-                if execution_record.planned_tasks:
-                    self._auto_mark_completed_tasks(execution_record)
-
-                # 处理GIF录制文件
-                self._process_gif_recording(execution_record, history)
-
-                safe_save(execution_record)
-
-            except Exception as e:
-                execution_record.status = 'failed'
-                execution_record.end_time = timezone.now()
-                execution_record.duration = (execution_record.end_time - execution_record.start_time).total_seconds()
-                execution_record.logs += f"\n执行出错: {str(e)}"
-                try:
-                    safe_save(execution_record)
-                except:
-                    # 如果保存失败，至少尝试保存基本信息
-                    logger.error(f"保存失败状态时出错: {e}")
-                    pass
-            finally:
-                # 清理停止信号
-                if execution_record.id in STOP_SIGNALS:
-                    del STOP_SIGNALS[execution_record.id]
-
-        thread = threading.Thread(target=run_task)
-        thread.daemon = True
-        thread.start()
+        # 提交到 Celery 的 ai_automation 队列执行（原来是裸线程；停止信号改成
+        # 纯数据库状态判断，见 stop_task 和 tasks.run_ai_adhoc_task）
+        from .tasks import run_ai_adhoc_task
+        try:
+            run_ai_adhoc_task.delay(execution_record.id, task_description, execution_mode, enable_gif)
+        except Exception as e:
+            # 提交失败时把记录标记为失败，避免永久卡在 "running"
+            execution_record.status = 'failed'
+            execution_record.logs += f"\n[System] 提交执行任务失败: {e}"
+            execution_record.save()
+            logger.error(f'提交 AI 临时任务执行失败: execution_id={execution_record.id}, error={e}')
+            return Response({
+                'error': f'提交执行任务失败，请检查任务队列服务是否正常: {e}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         return Response({
             'message': 'AI 任务开始执行',
@@ -3490,101 +3010,32 @@ class AIExecutionRecordViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='stop')
     def stop_task(self, request, pk=None):
-        """停止正在执行的任务"""
+        """停止正在执行的任务
+
+        停止信号直接写数据库状态，而不是进程内存字典（原来的 STOP_SIGNALS）。
+        因为实际执行现在跑在 Celery worker 进程里，跟发起这个请求的 Django
+        Web 进程不是同一个进程，进程内存字典在两边看到的是两份不同的数据，
+        worker 永远看不到 Web 进程设置的停止信号。数据库是两边共享的状态，
+        run_ai_case_task / run_ai_adhoc_task 里的 should_stop 会定期
+        refresh_from_db() 读取这个状态。
+        """
         try:
-            execution_id = int(pk)
-            if execution_id in STOP_SIGNALS:
-                STOP_SIGNALS[execution_id] = True
+            record = self.get_object()
+            if record.status == 'running':
+                record.status = 'stopped'
+                record.end_time = timezone.now()
+                record.logs += "\n[System] 任务已由用户停止。"
+                record.save()
                 return Response({'message': '已发送停止信号'})
-            else:
-                # 如果不在内存中，可能已经结束，或者重启过服务
-                # 尝试直接更新数据库状态
-                record = self.get_object()
-                if record.status == 'running':
-                    record.status = 'stopped'
-                    record.end_time = timezone.now()
-                    record.logs += "\n[System] 任务被强制标记为停止（未在运行队列中找到）。"
-                    record.save()
-                    return Response({'message': '任务已标记为停止'})
-                return Response({'message': '任务不在运行中'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'message': '任务不在运行中'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def _process_gif_recording(self, execution_record, history):
-        """
-        处理GIF录制文件
-        在执行完成后查找生成的GIF文件并保存路径到数据库
-        """
-        try:
-            import os
-            from django.conf import settings
-            from datetime import datetime
-
-            # browser-use 默认生成的GIF文件名（固定为agent_history.gif）
-            default_gif_path = os.path.join(os.getcwd(), 'agent_history.gif')
-
-            # 如果找到GIF文件，移动到media/ai_recording目录并重命名
-            if os.path.exists(default_gif_path):
-                import shutil
-
-                # 创建录制文件目录
-                gif_dir = os.path.join(settings.MEDIA_ROOT, 'ai_recording')
-                os.makedirs(gif_dir, exist_ok=True)
-
-                # 生成新的文件名：用例名称+年月日时分秒
-                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-                # 清理用例名称中的非法字符
-                safe_case_name = "".join(
-                    [c if c.isalnum() or c in (' ', '_', '-') else '_' for c in execution_record.case_name])
-                new_gif_filename = f"{safe_case_name}_{timestamp}.gif"
-                new_gif_path = os.path.join(gif_dir, new_gif_filename)
-
-                # 移动并重命名文件
-                shutil.move(default_gif_path, new_gif_path)
-
-                # 保存相对路径到数据库（使用正斜杠，确保跨平台兼容）
-                relative_path = f'media/ai_recording/{new_gif_filename}'
-                execution_record.gif_path = relative_path
-
-                logger.info(f"✅ GIF recording saved to: {relative_path}")
-            else:
-                logger.warning(f"⚠️ GIF file not found at: {default_gif_path}")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to process GIF recording: {e}")
-
-    def _auto_mark_completed_tasks(self, execution_record):
-        """
-        自动标记已完成的任务
-        通过分析执行历史和当前任务状态，自动标记那些已经执行但未被标记完成的任务
-        """
-        try:
-            # 记录初始状态
-            initial_completed = 0
-            initial_pending = 0
-            if execution_record.planned_tasks:
-                initial_completed = len([t for t in execution_record.planned_tasks if t.get('status') == 'completed'])
-                initial_pending = len([t for t in execution_record.planned_tasks if t.get('status') == 'pending'])
-                logger.info(f"📊 Before auto-mark: {initial_completed} completed, {initial_pending} pending tasks")
-
-            # 如果执行成功，标记所有任务为完成
-            if execution_record.status == 'passed' and execution_record.planned_tasks:
-                auto_marked_count = 0
-                for task in execution_record.planned_tasks:
-                    # 只对标记为pending的任务进行处理
-                    if task.get('status') == 'pending':
-                        task['status'] = 'completed'
-                        auto_marked_count += 1
-                        logger.info(f"🔒 Auto-marked task {task['id']} as completed")
-
-                if auto_marked_count > 0:
-                    logger.info(f"✨ Auto-marked {auto_marked_count} tasks as completed")
-                else:
-                    logger.info("📋 No pending tasks needed auto-marking")
-
-            # TODO: 可以添加更智能的分析逻辑来识别部分完成的任务
-
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to auto-mark completed tasks: {e}")
+    # 注：_process_gif_recording / _auto_mark_completed_tasks 已挪到
+    # apps/ui_automation/ai_execution_helpers.py 作为模块级函数（这两个方法
+    # 原本就不依赖 self.request/self.queryset，只是被误放进了 ViewSet 里，
+    # 之前 AICaseViewSet 和 AIExecutionRecordViewSet 各自维护了一份逐字节相同
+    # 的拷贝）。Celery 任务里直接 import 调用，不再需要"裸实例化 ViewSet"。
 
     @action(detail=True, methods=['get'], url_path='report')
     def generate_report(self, request, pk=None):
