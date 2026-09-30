@@ -94,7 +94,7 @@
             {{ selectedHistory.response_time?.toFixed(0) || 0 }}ms
           </el-descriptions-item>
           <el-descriptions-item :label="$t('apiTesting.history.executionTime')">
-            {{ formatDate(selectedHistory.executed_at) }}
+            {{ formatDateTime(selectedHistory.executed_at) }}
           </el-descriptions-item>
           <el-descriptions-item :label="$t('apiTesting.history.executor')">
             {{ selectedHistory.executed_by.username }}
@@ -273,8 +273,8 @@ import {
   deleteRequestHistory,
   batchDeleteRequestHistory,
 } from "@/api/api-testing";
-import dayjs from "dayjs";
 import HistoryTable from "./components/HistoryTable.vue";
+import { formatDateTime } from "@/utils/format";
 
 const { t } = useI18n();
 const activeTab = ref("HTTP");
@@ -329,9 +329,6 @@ const getStatusType = (status) => {
   return "info";
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm:ss");
-};
 
 const formatHeaders = (headers) => {
   if (!headers || typeof headers !== "object") return [];

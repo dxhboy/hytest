@@ -32,10 +32,13 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="$t('common.actions')" width="120" fixed="right">
+      <el-table-column :label="$t('common.actions')" width="140" fixed="right" align="center">
         <template #default="{ row }">
-          <el-button size="small" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
-          <el-button size="small" type="danger" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
+          <div class="action-col">
+            <el-button link type="primary" size="small" @click="openDialog(row)">{{ $t('common.edit') }}</el-button>
+            <span class="action-divider" />
+            <el-button link type="danger" size="small" @click="handleDelete(row)">{{ $t('common.delete') }}</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>

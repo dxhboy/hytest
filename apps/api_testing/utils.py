@@ -210,29 +210,218 @@ def execute_assertions(response, assertions, variables=None):
     return results
 
 
-def execute_test_suite(test_suite, environment, executed_by):
-    """执行测试套件并返回结果 - 优化版本，支持Session和脚本"""
-    from .models import TestExecution, RequestHistory
-    import requests
-    import time
+def _collect_suite_assertions(suite_request, api_request):
+    """套件请求关联表中的断言优先，否则使用请求本身的断言（深拷贝，避免引用问题）"""
+    source = suite_request.assertions or api_request.assertions or []
+    return [json.loads(json.dumps(a)) for a in source if isinstance(a, dict)]
+
+
+def _execute_suite_request(api_request, environment, executor, resolver,
+                           auth_variables, token_type, user, assertions):
+    """执行套件中的单个请求，写 RequestHistory 并返回结果项"""
+    # 复用 services 中的脱敏规则，与手动执行单个请求保持一致
+    from .services.masking import _mask_sensitive_data as mask
 
     try:
-        # 创建变量解析器
-        resolver = VariableResolver()
+        # 准备变量
+        variables = {}
+        if environment:
+            variables.update(environment.variables)
+        variables.update(auth_variables)
 
-        # 创建Session，支持自动管理cookies和连接
-        session = requests.Session()
+        # 执行预处理脚本
+        if api_request.pre_request_script:
+            try:
+                script_context = {
+                    'variables': variables,
+                    'resolver': resolver,
+                    'runtime_vars': resolver.runtime_variables
+                }
+                parse_and_execute_script(api_request.pre_request_script, script_context)
+            except Exception as e:
+                logger.warning(f"预处理脚本执行失败: {str(e)}")
 
-        # 创建执行记录
-        execution = TestExecution.objects.create(
-            test_suite=test_suite,
-            status='RUNNING',
-            start_time=timezone.now(),
-            executed_by=executed_by
+        # 替换变量
+        url = executor._replace_variables(api_request.url, variables)
+        url = resolver.resolve(url)
+
+        headers = executor.prepare_headers(api_request.headers, variables)
+
+        if 'token' in auth_variables and 'Authorization' not in headers:
+            headers['Authorization'] = f'{token_type} {auth_variables["token"]}'
+
+        params = executor.prepare_params(api_request.params, variables)
+        body_data, body_type = executor.prepare_body(api_request.body, api_request.method, variables)
+
+        # 执行请求
+        response, response_time = executor.execute(
+            method=api_request.method,
+            url=url,
+            headers=headers,
+            params=params,
+            body=body_data,
+            body_type=body_type
         )
 
-        # 获取套件中的请求
-        suite_requests = test_suite.testsuiterequest_set.filter(enabled=True).order_by('order')
+        # 执行后处理脚本，提取 Tests 中的 MongoDB 断言
+        script_assertions = []
+        if api_request.post_request_script:
+            try:
+                script_result = execute_with_response(api_request.post_request_script, response)
+                for _i, _sa in enumerate(script_result.get('assertions', [])):
+                    _expected = _sa.get('expected')
+                    if _expected is not None and isinstance(_expected, (dict, list)):
+                        script_assertions.append({
+                            'type': 'mongo_match',
+                            'name': f'Tests断言 {_i + 1}',
+                            'expected': _expected,
+                        })
+            except Exception as e:
+                logger.warning(f"后处理脚本执行失败: {str(e)}")
+
+        # 提取认证信息
+        _extract_auth_info_from_response(response, auth_variables, token_type, executor.session)
+
+        # 为响应时间断言添加实际时间
+        processed_assertions = []
+        for assertion in assertions:
+            if isinstance(assertion, dict):
+                assertion_copy = assertion.copy()
+                if assertion_copy.get('type') == 'response_time':
+                    assertion_copy['actual_time'] = response_time
+                if 'name' not in assertion_copy:
+                    assertion_copy['name'] = '未命名断言'
+                if 'type' not in assertion_copy:
+                    assertion_copy['type'] = 'unknown'
+                processed_assertions.append(assertion_copy)
+
+        # 合并运行时变量（pre/post script 中赋值的变量，以及前序请求提取的变量）
+        variables.update(resolver.runtime_variables)
+
+        # 执行断言
+        assertions_results = execute_assertions(response, processed_assertions + script_assertions, variables=variables)
+
+        # 判断是否通过
+        passed = all(r.get('passed', False) for r in assertions_results)
+
+        # 准备响应数据
+        response_json = None
+        try:
+            if response.headers.get('content-type', '').startswith('application/json'):
+                response_json = response.json()
+        except Exception:
+            pass
+
+        # 保存请求历史 - 确保保存完整的断言结果
+        history = RequestHistory.objects.create(
+            request=api_request,
+            environment=environment,
+            request_data={
+                'url': url,
+                'method': api_request.method,
+                'headers': mask(headers),
+                'params': mask(params),
+                'body': mask(body_data)
+            },
+            response_data={
+                'headers': dict(response.headers),
+                'body': response.text,
+                'json': response_json
+            },
+            status_code=response.status_code,
+            response_time=response_time,
+            assertions_results=assertions_results,
+            executed_by=user
+        )
+
+        result = {
+            'request_id': api_request.id,
+            'name': api_request.name,
+            'method': api_request.method,
+            'url': url,
+            'status_code': response.status_code,
+            'response_time': response_time,
+            'passed': passed,
+            'error': '',
+            'assertions_results': assertions_results,
+            'history_id': history.id
+        }
+
+        # 添加失败断言信息
+        if not passed:
+            failed_assertions = [a for a in assertions_results if not a.get('passed', False)]
+            result['failed_assertions'] = failed_assertions
+            result['error'] = f"有 {len(failed_assertions)} 个断言失败"
+
+        return result
+
+    except Exception as e:
+        logger.error(f"执行请求失败 {api_request.name}: {str(e)}", exc_info=True)
+
+        # 记录失败的请求历史
+        try:
+            history = RequestHistory.objects.create(
+                request=api_request,
+                environment=environment,
+                request_data={
+                    'url': api_request.url,
+                    'method': api_request.method,
+                    'headers': mask(api_request.headers),
+                    'params': mask(api_request.params),
+                    'body': mask(api_request.body)
+                },
+                error_message=str(e),
+                executed_by=user
+            )
+            history_id = history.id
+        except Exception:
+            history_id = None
+
+        return {
+            'request_id': api_request.id,
+            'name': api_request.name,
+            'method': api_request.method,
+            'url': api_request.url,
+            'passed': False,
+            'error': str(e),
+            'assertions_results': [{
+                'name': '执行错误',
+                'type': 'error',
+                'passed': False,
+                'message': f'请求执行失败: {str(e)}',
+                'expected': None,
+                'actual': None
+            }],
+            'history_id': history_id
+        }
+
+
+def run_suite_execution(execution, environment=None, executed_by=None):
+    """
+    执行一个已创建的套件执行记录（TestExecution），完成后更新其状态与结果。
+
+    手动执行（Celery 任务 api_testing.execute_test_suite）与定时任务（execute_test_suite）共用此逻辑。
+    发生未预期异常时把执行记录标记为 FAILED 后重新抛出。
+
+    Args:
+        execution: TestExecution，test_suite 已关联
+        environment: 使用的环境，None 表示不注入环境变量
+        executed_by: 执行人（写入请求历史）
+    """
+    import requests
+    from .models import TestSuiteRequest
+    from .services.request_executor import RequestExecutor
+
+    test_suite = execution.test_suite
+    try:
+        if execution.status != 'RUNNING':
+            execution.status = 'RUNNING'
+            execution.start_time = timezone.now()
+
+        suite_requests = TestSuiteRequest.objects.filter(
+            test_suite=test_suite,
+            enabled=True
+        ).order_by('order').select_related('request')
 
         execution.total_requests = suite_requests.count()
         execution.save()
@@ -241,240 +430,67 @@ def execute_test_suite(test_suite, environment, executed_by):
         passed_count = 0
         failed_count = 0
 
-        # 认证变量，支持自动token更新
+        resolver = VariableResolver()
+        executor = RequestExecutor(resolver)
+        executor.session = requests.Session()
+
         auth_variables = {}
         token_type = 'Bearer'
 
-        # 执行每个请求
         for suite_request in suite_requests:
             api_request = suite_request.request
+            assertions_to_execute = _collect_suite_assertions(suite_request, api_request)
 
-            try:
-                # 准备变量（环境变量 + 认证变量）
-                variables = {}
-                if environment:
-                    variables.update(environment.variables)
-                variables.update(auth_variables)
+            logger.info(f"执行请求 {api_request.name}，断言数量: {len(assertions_to_execute)}")
+            logger.debug(f"断言内容: {json.dumps(assertions_to_execute, ensure_ascii=False, indent=2)}")
 
-                # 执行预处理脚本
-                if api_request.pre_request_script:
-                    try:
-                        script_context = {
-                            'variables': variables,
-                            'resolver': resolver,
-                            'runtime_vars': resolver.runtime_variables
-                        }
-                        parse_and_execute_script(api_request.pre_request_script, script_context)
-                    except Exception as e:
-                        logger.warning(f"预处理脚本执行失败: {str(e)}")
-
-                # 替换URL中的变量
-                url = _replace_variables(api_request.url, variables)
-                url = resolver.resolve(url)
-
-                # 准备请求头
-                headers = {}
-                if isinstance(api_request.headers, list):
-                    for header_item in api_request.headers:
-                        if header_item.get('enabled', True) and header_item.get('key'):
-                            key = header_item['key']
-                            value = _replace_variables(str(header_item.get('value', '')), variables)
-                            value = resolver.resolve(value)
-                            headers[key] = value
-                else:
-                    headers = api_request.headers.copy() if api_request.headers else {}
-                    for key, value in headers.items():
-                        headers[key] = _replace_variables(str(value), variables)
-                        headers[key] = resolver.resolve(headers[key])
-
-                # 自动添加认证头
-                if 'token' in auth_variables and 'Authorization' not in headers:
-                    headers['Authorization'] = f'{token_type} {auth_variables["token"]}'
-
-                # 准备请求参数
-                params = api_request.params.copy() if api_request.params else {}
-                for key, value in params.items():
-                    params[key] = _replace_variables(str(value), variables)
-                    params[key] = resolver.resolve(params[key])
-
-                # 准备请求体
-                body_data = None
-                body_type = 'none'
-                if api_request.body and api_request.method in ['POST', 'PUT', 'PATCH']:
-                    raw_body_type = api_request.body.get('type', 'raw')
-                    if raw_body_type == 'json':
-                        body_data = api_request.body.get('data', {})
-                        body_data = _replace_variables_in_dict(body_data, variables)
-                        body_data = _resolve_variables_in_dict(body_data, resolver)
-                        body_type = 'json'
-                    elif raw_body_type in ['x-www-form-urlencoded', 'form-data']:
-                        body_data = _prepare_form_data(api_request.body.get('data', {}), variables, resolver)
-                        body_type = raw_body_type
-
-                # 根据 body 类型修正 Content-Type，防止用户配置的头与实际发送格式冲突
-                if body_type == 'json':
-                    headers['Content-Type'] = 'application/json'
-                elif body_type == 'x-www-form-urlencoded':
-                    headers['Content-Type'] = 'application/x-www-form-urlencoded'
-                elif body_type == 'form-data':
-                    headers.pop('Content-Type', None)
-
-                # 执行请求（使用Session）
-                start_time = time.time()
-                request_kwargs = {
-                    'method': api_request.method,
-                    'url': url,
-                    'headers': headers,
-                    'params': params,
-                    'timeout': 30
-                }
-                if body_type == 'json':
-                    request_kwargs['json'] = body_data
-                else:
-                    request_kwargs['data'] = body_data
-
-                response = session.request(**request_kwargs)
-                end_time = time.time()
-                response_time = (end_time - start_time) * 1000
-
-                # 执行后处理脚本，提取 Tests 中的 MongoDB 断言
-                script_assertions = []
-                if api_request.post_request_script:
-                    try:
-                        script_result = execute_with_response(api_request.post_request_script, response)
-                        for _i, _sa in enumerate(script_result.get('assertions', [])):
-                            _expected = _sa.get('expected')
-                            if _expected is not None and isinstance(_expected, (dict, list)):
-                                script_assertions.append({
-                                    'type': 'mongo_match',
-                                    'name': f'Tests断言 {_i + 1}',
-                                    'expected': _expected,
-                                })
-                    except Exception as e:
-                        logger.warning(f"后处理脚本执行失败: {str(e)}")
-
-                # 提取认证信息（自动更新token）
-                _extract_auth_info_from_response(response, auth_variables, token_type, session)
-
-                # 准备断言列表（合并套件请求断言和请求自身断言）
-                assertions_to_execute = []
-
-                # 添加套件请求的断言
-                if suite_request.assertions:
-                    for assertion in suite_request.assertions:
-                        assertion_copy = assertion.copy() if isinstance(assertion, dict) else {}
-                        if assertion_copy.get('type') == 'response_time':
-                            assertion_copy['actual_time'] = response_time
-                        assertions_to_execute.append(assertion_copy)
-
-                # 添加请求自身的断言（如果没有套件请求断言）
-                if not suite_request.assertions and api_request.assertions:
-                    for assertion in api_request.assertions:
-                        assertion_copy = assertion.copy() if isinstance(assertion, dict) else {}
-                        if assertion_copy.get('type') == 'response_time':
-                            assertion_copy['actual_time'] = response_time
-                        assertions_to_execute.append(assertion_copy)
-
-                # 合并运行时变量（pre/post script 中赋值的、前序请求提取的变量）
-                variables.update(resolver.runtime_variables)
-
-                # 执行断言验证（含 Tests 中的 MongoDB 断言）
-                assertions_results = execute_assertions(response, assertions_to_execute + script_assertions, variables=variables)
-
-                # 检查是否通过（所有断言通过）
-                passed = True
-                error_message = ''
-
-                for assertion_result in assertions_results:
-                    if not assertion_result.get('passed', True):
-                        passed = False
-                        error_message = assertion_result.get('message', '断言失败')
-                        break
-
-                if passed:
-                    passed_count += 1
-                else:
-                    failed_count += 1
-
-                # 构建结果对象 - 确保包含完整的断言结果信息
-                result_item = {
-                    'request_id': api_request.id,
-                    'name': api_request.name,
-                    'method': api_request.method,
-                    'url': url,
-                    'status_code': response.status_code,
-                    'response_time': response_time,
-                    'passed': passed,
-                    'error': error_message,
-                    'assertions_results': assertions_results
-                }
-                results.append(result_item)
-
-                # 准备响应JSON用于历史记录
-                response_json = None
-                try:
-                    if response.headers.get('content-type', '').startswith('application/json'):
-                        response_json = response.json()
-                except:
-                    pass
-
-                # 保存请求历史
-                RequestHistory.objects.create(
-                    request=api_request,
-                    environment=environment,
-                    request_data={
-                        'url': url,
-                        'method': api_request.method,
-                        'headers': _mask_sensitive_data(headers),
-                        'params': _mask_sensitive_data(params),
-                        'body': _mask_sensitive_data(body_data)
-                    },
-                    response_data={
-                        'headers': dict(response.headers),
-                        'body': response.text,
-                        'json': response_json
-                    },
-                    status_code=response.status_code,
-                    response_time=response_time,
-                    assertions_results=assertions_results,
-                    executed_by=executed_by
-                )
-
-            except Exception as e:
+            result = _execute_suite_request(
+                api_request, environment, executor, resolver,
+                auth_variables, token_type, executed_by, assertions_to_execute
+            )
+            results.append(result)
+            if result.get('passed', False):
+                passed_count += 1
+            else:
                 failed_count += 1
-                error_result = {
-                    'request_id': api_request.id,
-                    'name': api_request.name,
-                    'method': api_request.method,
-                    'url': api_request.url,
-                    'passed': False,
-                    'error': str(e),
-                    'assertions_results': [{
-                        'name': '执行错误',
-                        'type': 'error',
-                        'passed': False,
-                        'message': f'请求执行失败: {str(e)}',
-                        'expected': None,
-                        'actual': None
-                    }]
-                }
-                results.append(error_result)
 
-        # 更新执行结果
         execution.end_time = timezone.now()
         execution.passed_requests = passed_count
         execution.failed_requests = failed_count
         execution.status = 'COMPLETED' if failed_count == 0 else 'FAILED'
         execution.results = results
         execution.save()
+        return execution
+
+    except Exception as e:
+        logger.error(f"执行测试套件失败: {str(e)}", exc_info=True)
+        execution.status = 'FAILED'
+        execution.end_time = timezone.now()
+        execution.results = [{'error': str(e)}]
+        execution.save()
+        raise
+
+
+def execute_test_suite(test_suite, environment, executed_by):
+    """执行测试套件并返回结果（定时任务使用），执行逻辑与手动执行共用 run_suite_execution"""
+    from .models import TestExecution
+
+    try:
+        execution = TestExecution.objects.create(
+            test_suite=test_suite,
+            status='RUNNING',
+            start_time=timezone.now(),
+            executed_by=executed_by
+        )
+        run_suite_execution(execution, environment, executed_by)
 
         return {
             'success': True,
             'execution_id': execution.id,
-            'passed_count': passed_count,
-            'failed_count': failed_count,
+            'passed_count': execution.passed_requests,
+            'failed_count': execution.failed_requests,
             'total_count': execution.total_requests,
-            'results': results
+            'results': execution.results
         }
 
     except Exception as e:
@@ -486,7 +502,7 @@ def execute_test_suite(test_suite, environment, executed_by):
 
 
 def _extract_auth_info_from_response(response, auth_variables, token_type, session):
-    """从响应中提取认证信息（与TestSuiteViewSet中的方法一致）"""
+    """从响应中提取认证信息（套件执行共用）"""
     try:
         response_json = response.json()
 

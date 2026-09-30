@@ -359,7 +359,7 @@
 <script setup>
 import { ref, computed, watch } from "vue";
 import { ElMessage } from "element-plus";
-import axios from "axios";
+import api from "@/utils/api";
 import { useI18n } from "vue-i18n";
 
 const { t } = useI18n();
@@ -405,7 +405,7 @@ const categories = [
 
 const fetchAvailableTags = async () => {
   try {
-    const response = await axios.get("/api/data-factory/tags/");
+    const response = await api.get("/data-factory/tags/");
     availableTags.value = response.data.tags || [];
   } catch (error) {
     console.error("获取标签列表失败:", error);
@@ -429,7 +429,7 @@ const fetchRecordsByTag = async () => {
       params.tool_category = filterCategory.value;
     }
 
-    const response = await axios.get("/api/data-factory/", { params });
+    const response = await api.get("/data-factory/", { params });
     records.value = response.data.results || [];
     total.value = response.data.count || 0;
   } catch (error) {
@@ -467,7 +467,7 @@ const fetchRecords = async () => {
       params.tags__contains = filterTag.value;
     }
 
-    const response = await axios.get("/api/data-factory/", { params });
+    const response = await api.get("/data-factory/", { params });
     records.value = response.data.results || [];
     total.value = response.data.count || 0;
   } catch (error) {

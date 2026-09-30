@@ -189,88 +189,97 @@ def _generate_element_name(tag_name: str, attrs: dict, text_content: str) -> str
 
 class ActionRecorder:
     """
-    操作录制器 — 在 Playwright 执行操作时，同步通过 CDP 提取元素信息。
+    操作录制器 — 在 Playwright 执行操作时，通过复用的 CDP 会话提取元素信息。
 
     用法:
         recorder = ActionRecorder()
+        await recorder.attach(page)
         step = await recorder.record_click(page, 200, 300)
-        # step 是一个完整的录制步骤 dict
     """
 
     def __init__(self):
         self._steps: list[dict] = []
         self._step_counter = 0
+        self._cdp = None
+
+    async def attach(self, page: Page):
+        """绑定一个持久 CDP 会话，避免每次操作都新建/销毁"""
+        self._cdp = await page.context.new_cdp_session(page)
+
+    async def detach(self):
+        """释放 CDP 会话"""
+        if self._cdp:
+            try:
+                await self._cdp.detach()
+            except Exception:
+                pass
+            self._cdp = None
 
     async def _extract_element_at(self, page: Page, x: float, y: float) -> dict | None:
         """
         通过 CDP 获取指定坐标处的 DOM 元素信息。
         返回包含 tag_name, text_content, element_type, locators, attrs 的 dict。
         """
+        cdp = self._cdp
+        if not cdp:
+            return None
         try:
-            cdp = await page.context.new_cdp_session(page)
-            try:
-                # 通过坐标获取 DOM 节点
-                doc = await cdp.send('DOM.getDocument')
-                node_resp = await cdp.send('DOM.getNodeForLocation', {
-                    'x': int(x), 'y': int(y),
-                    'includeUserAgentShadowDOM': False,
+            await cdp.send('DOM.getDocument')
+            node_resp = await cdp.send('DOM.getNodeForLocation', {
+                'x': int(x), 'y': int(y),
+                'includeUserAgentShadowDOM': False,
+            })
+            node_id = node_resp.get('nodeId') or node_resp.get('backendNodeId')
+            if not node_id:
+                return None
+
+            if 'backendNodeId' in node_resp and 'nodeId' not in node_resp:
+                await cdp.send('DOM.resolveNode', {
+                    'backendNodeId': node_resp['backendNodeId'],
                 })
-                node_id = node_resp.get('nodeId') or node_resp.get('backendNodeId')
-                if not node_id:
-                    return None
+                desc_resp = await cdp.send('DOM.describeNode', {
+                    'backendNodeId': node_resp['backendNodeId'],
+                })
+            else:
+                desc_resp = await cdp.send('DOM.describeNode', {'nodeId': node_id})
 
-                # 如果返回的是 backendNodeId，需要 resolve 成 nodeId
-                if 'backendNodeId' in node_resp and 'nodeId' not in node_resp:
-                    resolve_resp = await cdp.send('DOM.resolveNode', {
-                        'backendNodeId': node_resp['backendNodeId'],
+            node = desc_resp.get('node', {})
+            tag_name = node.get('nodeName', 'unknown')
+
+            raw_attrs = node.get('attributes', [])
+            attrs = {}
+            for i in range(0, len(raw_attrs) - 1, 2):
+                attrs[raw_attrs[i]] = raw_attrs[i + 1]
+
+            text_content = ''
+            try:
+                remote_obj = await cdp.send('DOM.resolveNode', {
+                    'nodeId': node_id if 'nodeId' in node_resp else 0,
+                    'backendNodeId': node_resp.get('backendNodeId', 0),
+                })
+                object_id = remote_obj.get('object', {}).get('objectId')
+                if object_id:
+                    result = await cdp.send('Runtime.callFunctionOn', {
+                        'objectId': object_id,
+                        'functionDeclaration': 'function() { return this.innerText || this.textContent || ""; }',
+                        'returnByValue': True,
                     })
-                    desc_resp = await cdp.send('DOM.describeNode', {
-                        'backendNodeId': node_resp['backendNodeId'],
-                    })
-                else:
-                    desc_resp = await cdp.send('DOM.describeNode', {'nodeId': node_id})
+                    text_content = result.get('result', {}).get('value', '')
+            except Exception:
+                pass
 
-                node = desc_resp.get('node', {})
-                tag_name = node.get('nodeName', 'unknown')
+            element_type = _infer_element_type(tag_name, attrs)
+            locators = _generate_locators(tag_name, attrs, text_content)
+            name = _generate_element_name(tag_name, attrs, text_content)
 
-                # 获取属性（CDP 返回 [key, value, key, value, ...] 扁平数组）
-                raw_attrs = node.get('attributes', [])
-                attrs = {}
-                for i in range(0, len(raw_attrs) - 1, 2):
-                    attrs[raw_attrs[i]] = raw_attrs[i + 1]
-
-                # 获取文本内容 — 通过 JS 执行取 innerText
-                text_content = ''
-                try:
-                    remote_obj = await cdp.send('DOM.resolveNode', {
-                        'nodeId': node_id if 'nodeId' in node_resp else 0,
-                        'backendNodeId': node_resp.get('backendNodeId', 0),
-                    })
-                    object_id = remote_obj.get('object', {}).get('objectId')
-                    if object_id:
-                        result = await cdp.send('Runtime.callFunctionOn', {
-                            'objectId': object_id,
-                            'functionDeclaration': 'function() { return this.innerText || this.textContent || ""; }',
-                            'returnByValue': True,
-                        })
-                        text_content = result.get('result', {}).get('value', '')
-                except Exception:
-                    pass
-
-                element_type = _infer_element_type(tag_name, attrs)
-                locators = _generate_locators(tag_name, attrs, text_content)
-                name = _generate_element_name(tag_name, attrs, text_content)
-
-                return {
-                    'tag_name': tag_name,
-                    'text_content': text_content[:100],  # 截断过长文本
-                    'element_type': element_type,
-                    'element_name': name,
-                    'locators': locators,
-                    'attrs': attrs,
-                }
-            finally:
-                await cdp.detach()
+            return {
+                'tag_name': tag_name,
+                'text_content': text_content[:100],
+                'element_type': element_type,
+                'element_name': name,
+                'locators': locators,
+                'attrs': attrs,
+            }
         except Exception as e:
             logger.warning('CDP 元素提取失败 (x=%s, y=%s): %s', x, y, e)
             return None
@@ -306,9 +315,8 @@ class ActionRecorder:
 
     async def record_scroll(self, page: Page, x: float, y: float,
                             delta_x: float, delta_y: float) -> dict:
-        """录制滚动操作"""
-        element_info = await self._extract_element_at(page, x, y)
-        step = self._make_step('scroll', page.url, element_info)
+        """录制滚动操作（不提取元素，避免阻塞）"""
+        step = self._make_step('scroll', page.url, None)
         step['scroll_delta'] = {'x': delta_x, 'y': delta_y}
         return step
 

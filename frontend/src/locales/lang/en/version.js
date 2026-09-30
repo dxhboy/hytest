@@ -46,4 +46,20 @@ export default {
     "Are you sure to delete selected {count} versions? This action cannot be undone.",
   batchDeleteSuccess: "Successfully deleted {successCount} versions",
   batchDeleteFailed: "Batch delete failed",
+  // Jira
+  jira: {
+    dialogTitle: "Related Jira Issues",
+    relatedIssues: "Jira issues linked to this version",
+    recommendCases: "Recommend Regression Cases",
+    issueSummary: "Summary",
+    caseCount: "Linked Cases",
+    recommendTotal: "{count} recommended cases (deduplicated)",
+    sourceIssue: "Source Issue",
+    caseTitle: "Case Title",
+    caseType: "Type",
+    aiGenerated: "AI Generated",
+    manual: "Manual",
+    loadIssuesFailed: "Failed to load Jira issues",
+    loadRecommendFailed: "Failed to load recommended cases",
+  },
 };

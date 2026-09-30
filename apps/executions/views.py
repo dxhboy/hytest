@@ -1,7 +1,10 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
+from django.db.models import Q, Prefetch
 from django.utils import timezone
+from apps.projects.access import accessible_project_ids
 from .models import TestPlan, TestRun, TestRunCase, TestRunCaseHistory
 from apps.testcases.models import TestCase
 from apps.projects.models import Project
@@ -13,13 +16,36 @@ class TestPlanViewSet(viewsets.ModelViewSet):
     """
     测试计划视图集
     """
-    queryset = TestPlan.objects.all().order_by('-created_at')
+    queryset = TestPlan.objects.all()  # 仅用于路由 basename，实际数据由 get_queryset 按权限过滤
     serializer_class = TestPlanSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = TestPlan.objects.filter(
+            Q(creator=user) | Q(assignees=user) | Q(projects__in=accessible_project_ids(user))
+        ).distinct().select_related('creator', 'version').prefetch_related('projects', 'assignees').order_by('-created_at')
+        if getattr(self, 'action', None) == 'retrieve':
+            # 详情嵌套 test_runs（含进度统计与 run_cases），预取避免逐条查询
+            runs_qs = TestRun.with_progress_stats(TestRun.objects.order_by('-created_at')).prefetch_related(
+                Prefetch('run_cases', queryset=TestRunCase.objects.select_related('testcase'))
+            )
+            qs = qs.prefetch_related(Prefetch('test_runs', queryset=runs_qs))
+        return qs
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
             return TestPlanDetailSerializer
         return TestPlanSerializer
+
+    def _accessible_project_ids(self, project_ids):
+        """只保留当前用户有权限的项目"""
+        if not project_ids:
+            return []
+        return list(
+            Project.objects.filter(id__in=project_ids)
+            .filter(id__in=accessible_project_ids(self.request.user))
+            .values_list('id', flat=True)
+        )
 
     def perform_create(self, serializer):
         # 在创建TestPlan时，设置creator并自动为每个项目创建TestRun和TestRunCase
@@ -36,9 +62,14 @@ class TestPlanViewSet(viewsets.ModelViewSet):
         test_plan = serializer.save(creator=self.request.user, version=version)
         
         # 获取选中的项目和测试用例
-        project_ids = self.request.data.get('projects', [])
-        testcase_ids = self.request.data.get('testcases', [])
-        
+        project_ids = self._accessible_project_ids(self.request.data.get('projects', []))
+        # 用例必须属于所选且有权限的项目
+        testcase_ids = list(
+            TestCase.objects.filter(
+                id__in=self.request.data.get('testcases', []), project_id__in=project_ids
+            ).values_list('id', flat=True)
+        )
+
         if project_ids:
             # 设置测试计划的项目关联
             test_plan.projects.set(project_ids)
@@ -95,9 +126,9 @@ class TestPlanViewSet(viewsets.ModelViewSet):
                     'detail': '请选择有效的项目'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            # 获取指定项目的测试用例
+            # 获取指定项目的测试用例（仅限有权限的项目）
             testcases = TestCase.objects.filter(
-                project_id__in=project_ids,
+                project_id__in=self._accessible_project_ids(project_ids),
                 status__in=['draft', 'active']  # 包含草稿和激活状态的测试用例
             ).values('id', 'title', 'priority', 'test_type', 'project__name')
             
@@ -131,7 +162,7 @@ class TestPlanViewSet(viewsets.ModelViewSet):
         test_plan = serializer.save(version=version)
         
         # 更新项目关联
-        project_ids = self.request.data.get('projects', [])
+        project_ids = self._accessible_project_ids(self.request.data.get('projects', []))
         if project_ids:
             test_plan.projects.set(project_ids)
         
@@ -145,15 +176,37 @@ class TestRunViewSet(viewsets.ModelViewSet):
     """
     测试执行视图集
     """
-    queryset = TestRun.objects.all().order_by('-created_at')
+    queryset = TestRun.objects.all()  # 仅用于路由 basename，实际数据由 get_queryset 按权限过滤
     serializer_class = TestRunSerializer
+
+    def get_queryset(self):
+        qs = TestRun.objects.filter(
+            project_id__in=accessible_project_ids(self.request.user)
+        ).select_related('test_plan', 'project', 'version', 'assignee', 'creator').prefetch_related(
+            Prefetch('run_cases', queryset=TestRunCase.objects.select_related('testcase'))
+        ).order_by('-created_at')
+        # 注解进度统计，TestRunSerializer.get_progress 不再逐条执行 COUNT
+        return TestRun.with_progress_stats(qs)
+
+    def perform_create(self, serializer):
+        project = serializer.validated_data.get('project')
+        if project and not Project.objects.filter(
+            id=project.id, id__in=accessible_project_ids(self.request.user)
+        ).exists():
+            raise PermissionDenied('无权限在该项目下创建测试执行')
+        serializer.save()
 
 class TestRunCaseViewSet(viewsets.ModelViewSet):
     """
     测试执行用例视图集
     """
-    queryset = TestRunCase.objects.all()
+    queryset = TestRunCase.objects.all()  # 仅用于路由 basename，实际数据由 get_queryset 按权限过滤
     serializer_class = TestRunCaseSerializer
+
+    def get_queryset(self):
+        return TestRunCase.objects.filter(
+            test_run__project_id__in=accessible_project_ids(self.request.user)
+        ).select_related('test_run', 'testcase', 'executed_by')
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -207,5 +260,10 @@ class TestRunCaseHistoryViewSet(viewsets.ReadOnlyModelViewSet):
     """
     测试执行历史视图集（只读）
     """
-    queryset = TestRunCaseHistory.objects.all().order_by('-executed_at')
+    queryset = TestRunCaseHistory.objects.all()  # 仅用于路由 basename，实际数据由 get_queryset 按权限过滤
     serializer_class = TestRunCaseHistorySerializer
+
+    def get_queryset(self):
+        return TestRunCaseHistory.objects.filter(
+            run_case__test_run__project_id__in=accessible_project_ids(self.request.user)
+        ).select_related('run_case', 'executed_by').order_by('-executed_at')

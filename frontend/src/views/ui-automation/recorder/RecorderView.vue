@@ -14,7 +14,7 @@
       <div class="recorder-main">
         <div v-if="!isConnected" class="recorder-placeholder">
           <el-icon :size="64" color="#c0c4cc"><VideoCamera /></el-icon>
-          <p>{{ $t('recorder.placeholderText') }}</p>
+          <p>{{ $t('uiAutomation.recorder.placeholderText') }}</p>
         </div>
         <RecorderCanvas
           v-show="isConnected"
@@ -25,7 +25,7 @@
           @mousemove="sendWs({ type: 'mousemove', ...$event })"
           @scroll="sendWs({ type: 'scroll', ...$event })"
           @keydown="sendWs({ type: 'keydown', ...$event })"
-          @input="sendWs({ type: 'input', ...$event })"
+          @paste="sendWs({ type: 'paste', ...$event })"
         />
       </div>
 
@@ -67,9 +67,6 @@ const matchResults = ref([])
 const showConfirmDialog = ref(false)
 const viewportWidth = ref(1280)
 const viewportHeight = ref(720)
-// 记录最后一次鼠标按下的坐标（viewport 坐标系），用于在检测到输入框元素时
-// 定位文本输入浮层的弹出位置
-const lastClickCoords = ref({ x: 0, y: 0 })
 
 let ws = null
 
@@ -114,10 +111,6 @@ function handleWsMessage(data) {
     case 'action':
       // 实时追加录制步骤
       recordedSteps.value.push(data.data)
-      // 如果点击的是输入框类元素，弹出文本输入浮层，方便用户输入文本
-      if (data.data.action_type === 'click' && data.data.element_info?.element_type === 'INPUT') {
-        canvasRef.value?.showInput(lastClickCoords.value.x, lastClickCoords.value.y)
-      }
       break
     case 'status':
       // 状态更新（navigating, ready, error）
@@ -152,8 +145,6 @@ async function handleStart({ projectId, targetUrl }) {
 }
 
 function handleMouseDown(event) {
-  // 先记录本次点击坐标，供后续 action 消息判断是否需要弹出文本输入浮层
-  lastClickCoords.value = { x: event.x, y: event.y }
   sendWs({ type: 'mousedown', ...event })
 }
 
@@ -219,7 +210,7 @@ onUnmounted(cleanup)
 .recorder-view {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: calc(100vh - 90px);
 }
 .recorder-body {
   display: flex;
@@ -231,20 +222,24 @@ onUnmounted(cleanup)
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1a1a1a;
-  min-height: 500px;
+  background: #f0f2f5;
+  overflow: hidden;
+  padding: 8px;
 }
 .recorder-placeholder {
   text-align: center;
-  color: #c0c4cc;
+  color: #909399;
+  margin-top: 120px;
 }
 .recorder-placeholder p {
   margin-top: 16px;
   font-size: 14px;
 }
 .recorder-sidebar {
-  width: 350px;
+  width: 320px;
+  min-width: 320px;
   border-left: 1px solid #e4e7ed;
   background: #fff;
+  overflow-y: auto;
 }
 </style>

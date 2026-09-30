@@ -126,32 +126,51 @@ def confirm_recording(request, session_id):
     )
 
     # 逐步骤创建 TestCaseStep 并处理元素
+    # created_cache 用于去重：同一定位器只创建一个 Element
+    created_cache: dict[str, Element] = {}
+
     for step_data in confirmed_steps:
         element = None
         match_status = step_data.get('status', '')
 
-        if match_status == 'reused':
-            # 复用的元素 — 直接关联，无需变更
-            element_id = step_data.get('element_id')
-            if element_id:
-                element = Element.objects.filter(id=element_id).first()
+        custom_name = step_data.get('element_name', '')
+        if custom_name and step_data.get('element_info'):
+            step_data['element_info']['element_name'] = custom_name
 
-        elif match_status == 'updated':
-            # 匹配阶段是 dry_run，只预览了 changes，并未写库。
-            # 用户在此确认保存后，才真正把录制时检测到的定位器更新落库。
-            element_id = step_data.get('element_id')
-            if element_id:
-                element = Element.objects.filter(id=element_id).first()
-                if element and step_data.get('element_info'):
-                    _apply_locator_update(element, step_data['element_info'].get('locators', []))
+        try:
+            if match_status == 'reused':
+                element_id = step_data.get('element_id')
+                if element_id:
+                    element = Element.objects.filter(id=element_id).first()
+                    if element and custom_name and element.name != custom_name:
+                        element.name = custom_name
+                        element.save(update_fields=['name'])
 
-        elif match_status == 'created':
-            # 新增元素 — 在此创建
-            element_info = step_data.get('element_info', {})
-            if element_info:
-                element = _create_element(
-                    session.project, element_info, step_data.get('page_url', ''), request.user
-                )
+            elif match_status == 'updated':
+                element_id = step_data.get('element_id')
+                if element_id:
+                    element = Element.objects.filter(id=element_id).first()
+                    if element and step_data.get('element_info'):
+                        _apply_locator_update(element, step_data['element_info'].get('locators', []))
+                    if element and custom_name and element.name != custom_name:
+                        element.name = custom_name
+                        element.save(update_fields=['name'])
+
+            elif match_status == 'created':
+                element_info = step_data.get('element_info', {})
+                if element_info:
+                    locators = element_info.get('locators', [])
+                    cache_key = locators[0]['value'] if locators else ''
+                    if cache_key and cache_key in created_cache:
+                        element = created_cache[cache_key]
+                    else:
+                        element = _create_element(
+                            session.project, element_info, step_data.get('page_url', ''), request.user
+                        )
+                        if cache_key:
+                            created_cache[cache_key] = element
+        except Exception as e:
+            logger.exception('处理录制步骤 #%s 失败', step_data.get('step_number'))
 
         TestCaseStep.objects.create(
             test_case=test_case,
@@ -192,11 +211,18 @@ def cancel_recording(request, session_id):
     return Response({'session_id': session.id, 'status': 'cancelled'})
 
 
+def _get_or_create_strategy(name: str) -> LocatorStrategy:
+    """获取定位策略，不存在则自动创建"""
+    strategy, _ = LocatorStrategy.objects.get_or_create(
+        name=name,
+        defaults={'description': name},
+    )
+    return strategy
+
+
 def _apply_locator_update(element: Element, new_locators: list) -> dict:
     """
-    将录制时检测到的定位器更新真正落库（独立于 ElementMatcher，
-    仅在用户点击"确认保存"之后调用，逻辑与
-    ElementMatcher._apply_update 的非 dry_run 分支保持一致）。
+    将录制时检测到的定位器更新真正落库。
     新的最高优先级定位器成为主定位器，其余存入 backup_locators。
     """
     if not new_locators:
@@ -205,15 +231,10 @@ def _apply_locator_update(element: Element, new_locators: list) -> dict:
     new_primary = new_locators[0]
     new_backups = new_locators[1:]
 
-    strategy_obj = LocatorStrategy.objects.filter(name=new_primary['strategy']).first()
-    if strategy_obj:
-        element.locator_strategy = strategy_obj
-        element.locator_value = new_primary['value']
-        element.backup_locators = new_backups if new_backups else None
-    else:
-        # 策略不存在时不更新主定位器，只更新备用
-        element.backup_locators = new_locators
-
+    strategy_obj = _get_or_create_strategy(new_primary['strategy'])
+    element.locator_strategy = strategy_obj
+    element.locator_value = new_primary['value']
+    element.backup_locators = new_backups if new_backups else None
     element.validation_status = 'VALID'
     element.last_validated = timezone.now()
     element.save()
@@ -227,16 +248,11 @@ def _create_element(project, element_info: dict, page_url: str, user) -> Element
 
     locators = element_info.get('locators', [])
     if not locators:
-        # 没有定位器时用 xpath 兜底
         locators = [{'strategy': 'xpath', 'value': '//body'}]
 
-    # 主定位器 = 第一个
     primary = locators[0]
-    strategy = LocatorStrategy.objects.filter(name=primary['strategy']).first()
-    if not strategy:
-        strategy = LocatorStrategy.objects.first()
+    strategy = _get_or_create_strategy(primary['strategy'])
 
-    # 备用定位器 = 剩余
     backups = locators[1:] if len(locators) > 1 else None
 
     return Element.objects.create(

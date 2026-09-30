@@ -68,6 +68,31 @@
           </template>
         </el-table-column>
         <el-table-column
+          :label="$t('configuration.remoteBrowser.onlineStatus')"
+          width="110"
+          align="center"
+        >
+          <template #default="{ row }">
+            <el-tooltip
+              v-if="!row.last_heartbeat"
+              :content="$t('configuration.remoteBrowser.neverHeartbeat')"
+            >
+              <el-tag type="info" size="small">{{
+                $t("configuration.remoteBrowser.offline")
+              }}</el-tag>
+            </el-tooltip>
+            <el-tooltip v-else :content="formatHeartbeatTime(row.last_heartbeat)">
+              <el-tag :type="row.is_online ? 'success' : 'danger'" size="small">
+                {{
+                  row.is_online
+                    ? $t("configuration.remoteBrowser.online")
+                    : $t("configuration.remoteBrowser.offline")
+                }}
+              </el-tag>
+            </el-tooltip>
+          </template>
+        </el-table-column>
+        <el-table-column
           prop="created_by_name"
           :label="$t('configuration.remoteBrowser.createdBy')"
           width="120"
@@ -75,36 +100,24 @@
         />
         <el-table-column
           :label="$t('configuration.remoteBrowser.actions')"
-          width="200"
+          width="220"
           align="center"
           fixed="right"
         >
           <template #default="{ row }">
-            <el-button
-              text
-              type="primary"
-              size="small"
-              :loading="row.testing"
-              @click="handleTestConnection(row)"
-            >
-              {{ $t("configuration.remoteBrowser.testConnection") }}
-            </el-button>
-            <el-button
-              text
-              type="primary"
-              size="small"
-              @click="openDialog(row)"
-            >
-              {{ $t("uiAutomation.common.edit") }}
-            </el-button>
-            <el-button
-              text
-              type="danger"
-              size="small"
-              @click="handleDelete(row)"
-            >
-              {{ $t("uiAutomation.common.delete") }}
-            </el-button>
+            <div class="action-col">
+              <el-button link type="primary" size="small" :loading="row.testing" @click="handleTestConnection(row)">
+                {{ $t("configuration.remoteBrowser.testConnection") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="primary" size="small" @click="openDialog(row)">
+                {{ $t("uiAutomation.common.edit") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="danger" size="small" @click="handleDelete(row)">
+                {{ $t("uiAutomation.common.delete") }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -209,11 +222,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Monitor, Plus } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
+import dayjs from "dayjs";
 import {
   getUiProjects,
   getRemoteBrowserServices,
@@ -464,9 +478,23 @@ const handleTestConnection = async (row) => {
   }
 };
 
+const formatHeartbeatTime = (value) =>
+  value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "";
+
+// 在线状态是有时效性的（超过阈值没收到心跳就会被后端判定离线），页面停留期间
+// 定期自动刷新一下列表，不用手动刷新页面才能看到状态变化
+let refreshTimer = null;
+
 onMounted(async () => {
   await fetchProjects();
   await fetchServices();
+  refreshTimer = setInterval(fetchServices, 30000);
+});
+
+onUnmounted(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+  }
 });
 </script>
 

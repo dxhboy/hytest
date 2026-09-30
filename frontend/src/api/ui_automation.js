@@ -118,6 +118,15 @@ export function deleteElement(id) {
   });
 }
 
+// 批量删除UI元素
+export function batchDeleteElements(ids) {
+  return request({
+    url: "/ui-automation/elements/batch-delete/",
+    method: "post",
+    data: { ids },
+  });
+}
+
 // 测试脚本相关API
 
 // 获取测试脚本列表
@@ -243,7 +252,29 @@ export function updateTestCaseOrder(suiteId, testCaseOrders) {
   });
 }
 
-// 运行测试套件
+export function getTestSuiteScripts(suiteId) {
+  return request({
+    url: `/ui-automation/test-suites/${suiteId}/scripts/`,
+    method: "get",
+  });
+}
+
+export function addScriptToTestSuite(suiteId, data) {
+  return request({
+    url: `/ui-automation/test-suites/${suiteId}/add_script/`,
+    method: "post",
+    data,
+  });
+}
+
+export function removeScriptFromTestSuite(suiteId, scriptId) {
+  return request({
+    url: `/ui-automation/test-suites/${suiteId}/remove_script/`,
+    method: "delete",
+    data: { script_id: scriptId },
+  });
+}
+
 export function runTestSuite(suiteId, data) {
   return request({
     url: `/ui-automation/test-suites/${suiteId}/run_suite/`,
@@ -710,6 +741,15 @@ export function copyTestCase(id) {
   });
 }
 
+// 从测试用例生成脚本
+export function generateScriptFromTestCase(id, data) {
+  return request({
+    url: `/ui-automation/test-cases/${id}/generate-script/`,
+    method: "post",
+    data,
+  });
+}
+
 // 获取测试用例执行历史
 export function getTestCaseExecutions(params) {
   return request({
@@ -1104,5 +1144,50 @@ export function testRemoteBrowserConnection(id) {
     url: `/ui-automation/remote-browser-services/${id}/test_connection/`,
     method: "post",
     timeout: 30000,
+  });
+}
+
+// ==================== 项目参数相关API ====================
+
+// 获取项目参数列表
+export function getUiProjectParameters(params) {
+  return request({
+    url: "/ui-automation/project-parameters/",
+    method: "get",
+    params,
+  });
+}
+
+// 创建项目参数
+export function createUiProjectParameter(data) {
+  return request({
+    url: "/ui-automation/project-parameters/",
+    method: "post",
+    data,
+  });
+}
+
+// 获取项目参数详情
+export function getUiProjectParameterDetail(id) {
+  return request({
+    url: `/ui-automation/project-parameters/${id}/`,
+    method: "get",
+  });
+}
+
+// 更新项目参数
+export function updateUiProjectParameter(id, data) {
+  return request({
+    url: `/ui-automation/project-parameters/${id}/`,
+    method: "patch",
+    data,
+  });
+}
+
+// 删除项目参数
+export function deleteUiProjectParameter(id) {
+  return request({
+    url: `/ui-automation/project-parameters/${id}/`,
+    method: "delete",
   });
 }

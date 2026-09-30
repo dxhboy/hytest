@@ -41,6 +41,11 @@ class JiraIssueLinkSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_by', 'created_at']
 
     def get_case_count(self, obj):
+        # 优先使用查询集注解的 case_total（.annotate(case_total=Count('case_links'))），避免逐行 COUNT；
+        # 未注解时 count() 在 prefetch_related('case_links') 后会直接使用预取缓存
+        annotated = getattr(obj, 'case_total', None)
+        if annotated is not None:
+            return annotated
         return obj.case_links.count()
 
 

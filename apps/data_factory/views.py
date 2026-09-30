@@ -6,16 +6,10 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.views import APIView
-from rest_framework.viewsets import GenericViewSet
-from django.contrib.auth.models import User
 from django.db.models import Q, Count
 from django.utils import timezone
 from django.http import HttpResponse
 from django.core.cache import cache
-from django.views.decorators.csrf import csrf_exempt
-from asgiref.sync import sync_to_async
-import asyncio
 
 import logging
 from pathlib import Path
@@ -81,7 +75,9 @@ class DataFactoryViewSet(viewsets.ModelViewSet):
             query_params = request.query_params.copy()
             query_params.pop('_t', None)  # 移除时间戳参数
             
-            cache_key = f'data_factory_history_{request.user.id}_{query_params.get("page", 1)}_{query_params.get("page_size", 10)}_{query_params.get("tool_category", "")}_{query_params.get("tool_name__icontains", "")}_{query_params.get("tags__contains", "")}'
+            # 键中带用户级版本号，clear_user_cache 只需递增版本即可让该用户的全部分页缓存失效
+            history_version = cache.get(self._history_version_key(request.user.id), 0)
+            cache_key = f'data_factory_history_{request.user.id}_v{history_version}_{query_params.get("page", 1)}_{query_params.get("page_size", 10)}_{query_params.get("tool_category", "")}_{query_params.get("tool_name__icontains", "")}_{query_params.get("tags__contains", "")}'
             
             # 检查缓存，但如果有时间戳参数则不使用缓存
             if '_t' not in request.query_params:
@@ -179,30 +175,20 @@ class DataFactoryViewSet(viewsets.ModelViewSet):
             logger.error(f'删除记录失败: {str(e)}, ID={kwargs.get("pk")}, 用户ID={request.user.id}', exc_info=True)
             return Response({'error': f'删除失败: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @staticmethod
+    def _history_version_key(user_id):
+        return f'data_factory_history_version_{user_id}'
+
     def clear_user_cache(self, user_id):
         """清除用户相关的缓存"""
         # 清除统计信息缓存
         cache.delete(f'data_factory_statistics_{user_id}')
         # 清除标签缓存
         cache.delete(f'data_factory_tags_{user_id}')
-        # 清除历史记录缓存
+        # 清除历史记录缓存：递增版本号，旧版本的分页缓存不再被命中并自然过期（适用于任意缓存后端）
         try:
-            # 遍历所有缓存键，删除与当前用户相关的历史记录缓存
-            if hasattr(cache, '_cache'):
-                # 对于LocMemCache
-                keys_to_delete = []
-                for key in cache._cache:
-                    # 匹配包含 data_factory_history 和用户ID的缓存键
-                    if 'data_factory_history' in key and str(user_id) in key:
-                        keys_to_delete.append(key)
-                for key in keys_to_delete:
-                    cache.delete(key)
-            elif hasattr(cache, 'keys'):
-                # 对于支持keys()方法的缓存后端
-                for key in cache.keys():
-                    # 匹配包含 data_factory_history 和用户ID的缓存键
-                    if 'data_factory_history' in key and str(user_id) in key:
-                        cache.delete(key)
+            version_key = self._history_version_key(user_id)
+            cache.set(version_key, cache.get(version_key, 0) + 1, None)
         except Exception as e:
             logger.error(f'清除历史记录缓存失败: {str(e)}')
         # 历史记录缓存会在3分钟后自动过期（作为备份）

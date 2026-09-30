@@ -86,7 +86,7 @@
                 $t("reviewTemplate.createdAtLabel")
               }}</span>
               <span class="info-value">{{
-                formatDate(template.created_at)
+                formatDateMinute(template.created_at)
               }}</span>
             </div>
           </div>
@@ -267,7 +267,7 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import { Plus, Delete } from "@element-plus/icons-vue";
 import api from "@/utils/api";
-import dayjs from "dayjs";
+import { formatDateMinute } from "@/utils/format";
 
 const router = useRouter();
 const { t } = useI18n();
@@ -460,9 +460,6 @@ const onProjectChange = (projectId) => {
   }
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm");
-};
 
 onMounted(() => {
   fetchTemplates();

@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from apps.core.permissions import IsStaffOrReadOnly
 import shutil
 import subprocess
 import platform
@@ -23,114 +24,51 @@ class EnvironmentConfigViewSet(viewsets.ViewSet):
         检测环境状态 (系统浏览器和Playwright浏览器)
         """
         import sys
-        
+        from .browser_paths import find_installed_browser_path
+
         # 1. 检测系统浏览器 (Selenium常用)
         system_browsers_list = ['chrome', 'firefox', 'edge'] # Safari not on Windows usually
         if platform.system() == 'Darwin':
              system_browsers_list.append('safari')
-             
+
         system_results = []
 
         is_windows = platform.system() == 'Windows'
+        current_system = platform.system()
+
+        # 各浏览器在找不到时给出的安装建议，按当前系统分平台维护
+        # （候选路径本身已经统一到 browser_paths.py，这里只保留"文案"这一份差异）
+        install_cmd_map = {
+            'chrome': {
+                'Windows': "请下载 Chrome 安装包安装",
+                'Darwin': "brew install --cask google-chrome",
+                'Linux': "sudo dnf install chromium 或 sudo dnf install google-chrome-stable",
+            },
+            'firefox': {
+                'Windows': "请下载 Firefox 安装包安装",
+                'Darwin': "brew install --cask firefox",
+                'Linux': "sudo dnf install firefox",
+            },
+            'edge': {
+                'Windows': "请下载 Edge 安装包安装",
+                'Darwin': "brew install --cask microsoft-edge",
+                'Linux': "从微软官网下载 Edge Linux 版本安装包",
+            },
+            'safari': {
+                'Darwin': "系统自带",
+            },
+        }
 
         for browser in system_browsers_list:
-            installed = False
-            version = None
-            install_cmd = ""
-            
-            if browser == 'chrome':
-                if is_windows:
-                    paths = [
-                        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-                        os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe")
-                    ]
-                    for p in paths:
-                        if os.path.exists(p):
-                            installed = True
-                            break
-                    install_cmd = "请下载 Chrome 安装包安装"
-                elif platform.system() == 'Darwin':  # macOS
-                    if os.path.exists('/Applications/Google Chrome.app'):
-                        installed = True
-                    install_cmd = "brew install --cask google-chrome"
-                else:  # Linux
-                    chrome_paths = [
-                        '/usr/bin/google-chrome',
-                        '/usr/bin/google-chrome-stable',
-                        '/usr/bin/chromium-browser',
-                        '/usr/bin/chromium',
-                        '/opt/google/chrome/google-chrome',
-                        '/snap/bin/chromium'
-                    ]
-                    for path in chrome_paths:
-                        if os.path.exists(path):
-                            installed = True
-                            break
-                    install_cmd = "sudo dnf install chromium 或 sudo dnf install google-chrome-stable"
-                    
-            elif browser == 'firefox':
-                if is_windows:
-                    paths = [
-                        r"C:\Program Files\Mozilla Firefox\firefox.exe",
-                        r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe"
-                    ]
-                    for p in paths:
-                        if os.path.exists(p):
-                            installed = True
-                            break
-                    install_cmd = "请下载 Firefox 安装包安装"
-                elif platform.system() == 'Darwin':  # macOS
-                    if os.path.exists('/Applications/Firefox.app'):
-                        installed = True
-                    install_cmd = "brew install --cask firefox"
-                else:  # Linux
-                    firefox_paths = [
-                        '/usr/bin/firefox',
-                        '/usr/bin/firefox-esr'
-                    ]
-                    for path in firefox_paths:
-                        if os.path.exists(path):
-                            installed = True
-                            break
-                    install_cmd = "sudo dnf install firefox"
-                    
-            elif browser == 'safari':
-                if not is_windows and os.path.exists('/Applications/Safari.app'):
-                    installed = True
-                install_cmd = "系统自带"
-                
-            elif browser == 'edge':
-                if is_windows:
-                    paths = [
-                         r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-                         r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
-                    ]
-                    for p in paths:
-                        if os.path.exists(p):
-                            installed = True
-                            break
-                    install_cmd = "请下载 Edge 安装包安装"
-                elif platform.system() == 'Darwin':  # macOS
-                    if os.path.exists('/Applications/Microsoft Edge.app'):
-                        installed = True
-                    install_cmd = "brew install --cask microsoft-edge"
-                else:  # Linux
-                    edge_paths = [
-                        '/usr/bin/microsoft-edge',
-                        '/usr/bin/microsoft-edge-stable',
-                        '/opt/microsoft/msedge/msedge'
-                    ]
-                    for path in edge_paths:
-                        if os.path.exists(path):
-                            installed = True
-                            break
-                    install_cmd = "从微软官网下载 Edge Linux 版本安装包"
+            installed_path = find_installed_browser_path(browser, system=current_system)
+            installed = installed_path is not None
+            version = None  # Version check omitted for simplicity/performance
+            install_cmd = install_cmd_map.get(browser, {}).get(current_system, "")
 
             system_results.append({
                 'name': browser,
                 'installed': installed,
-                'version': version, # Version check omitted for simplicity/performance
+                'version': version,
                 'install_cmd': install_cmd
             })
 
@@ -147,7 +85,7 @@ class EnvironmentConfigViewSet(viewsets.ViewSet):
             playwright_cache_dir = os.path.expanduser('~/.cache/ms-playwright')
         
         # 调试信息：打印缓存路径
-        print(f"Playwright cache dir: {playwright_cache_dir}")
+        logger.debug(f"Playwright cache dir: {playwright_cache_dir}")
 
         for browser in playwright_browsers_list:
             installed = False
@@ -195,14 +133,57 @@ class EnvironmentConfigViewSet(viewsets.ViewSet):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-import requests
+from apps.core.llm import LLMClient, LLMError, LLMTimeoutError, resolve_base_url
 from apps.requirement_analysis.models import AIModelConfig
+
+# 测试连接只发 1 个 token，60 秒读取超时足够
+CONNECTION_TEST_READ_TIMEOUT = 60.0
+
+
+def _probe_connection(config, log_prefix):
+    """
+    发送最小 chat/completions 请求测试连通性，返回 DRF Response（响应格式与迁移前一致）
+    """
+    client = LLMClient(config, read_timeout=CONNECTION_TEST_READ_TIMEOUT, auto_version=False)
+    try:
+        if not client.config.is_bedrock:
+            logger.info(f"{log_prefix} - 发送POST请求到: {client.url}")
+        # 不回填 temperature 等采样参数：部分模型（如 Kimi）只接受特定 temperature
+        client.chat([{"role": "user", "content": "Hi"}], max_tokens=1, defaults=())
+        logger.info(f"{log_prefix} - API连接测试成功")
+        return Response({'message': '连接成功'})
+    except LLMTimeoutError as e:
+        logger.error(f"{log_prefix} - API连接测试超时: {e.message}")
+        return Response(
+            {'error': '连接测试超时: 请检查网络连接或API地址是否正确'},
+            status=status.HTTP_408_REQUEST_TIMEOUT
+        )
+    except LLMError as e:
+        if e.status_code is not None:
+            logger.error(f"{log_prefix} - API调用返回错误: Status={e.status_code}, Body={e.body}")
+            return Response(
+                {'error': f'连接失败: {e.status_code} - {e.body}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        logger.error(f"{log_prefix} - API连接测试异常: {e.message}")
+        return Response(
+            {'error': f'连接异常: {e.message}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+    except Exception as e:
+        logger.error(f"{log_prefix} - API连接测试异常: {repr(e)}")
+        return Response(
+            {'error': f'连接异常: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
 
 class AIIntelligentModeConfigViewSet(viewsets.ViewSet):
     """
     AI智能模式配置视图集 (Browser-use) - 使用ModelViewSet支持标准CRUD
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
+    read_only_actions = ('test_connection',)
     queryset = AIModelConfig.objects.filter(role='browser_use_text')
 
     def list(self, request):
@@ -387,16 +368,8 @@ class AIIntelligentModeConfigViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # 默认Base URL处理
-        if not base_url:
-            if provider == 'openai':
-                base_url = 'https://api.openai.com/v1'
-            elif provider == 'siliconflow':
-                base_url = 'https://api.siliconflow.cn/v1'
-            elif provider == 'deepseek':
-                base_url = 'https://api.deepseek.com'
-            elif provider == 'anthropic':
-                base_url = 'https://api.anthropic.com'
+        # 默认Base URL处理（统一由 apps.core.llm 维护各厂商默认地址）
+        base_url = resolve_base_url(provider, base_url)
 
         if not base_url:
              return Response(
@@ -404,48 +377,13 @@ class AIIntelligentModeConfigViewSet(viewsets.ViewSet):
                  status=status.HTTP_400_BAD_REQUEST
              )
 
-        base_url = base_url.rstrip('/')
-
-        try:
-            # 尝试调用 chat completions 接口 (OpenAI Compatible)
-            url = f"{base_url}/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-
-            data = {
-                "model": model_name,
-                "messages": [{"role": "user", "content": "Hi"}],
-                "max_tokens": 1
-            }
-
-            logger.info(f"AI智能模式预览 - 发送POST请求到: {url}")
-            # 增加超时时间：连接超时60秒，读取超时900秒
-            response = requests.post(url, headers=headers, json=data, timeout=(60, 900))
-
-            logger.info(f"AI智能模式预览 - 收到响应: status_code={response.status_code}")
-
-            if response.status_code == 200:
-                return Response({'message': '连接成功'})
-            else:
-                logger.error(f"AI智能模式 - API调用返回错误: Status={response.status_code}, Body={response.text}")
-                return Response(
-                    {'error': f'连接失败: {response.status_code} - {response.text}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except requests.exceptions.Timeout as e:
-            logger.error(f"AI智能模式 - API连接测试超时: {repr(e)}")
-            return Response(
-                {'error': '连接测试超时: 请检查网络连接或API地址是否正确'},
-                status=status.HTTP_408_REQUEST_TIMEOUT
-            )
-        except Exception as e:
-            logger.error(f"AI智能模式 - API连接测试异常: {repr(e)}")
-            return Response(
-                {'error': f'连接异常: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        probe_config = {
+            'provider': provider,
+            'base_url': base_url,
+            'api_key': api_key,
+            'model_name': model_name,
+        }
+        return _probe_connection(probe_config, 'AI智能模式预览')
 
     @action(detail=True, methods=['post'])
     def test_connection(self, request, pk=None):
@@ -466,64 +404,11 @@ class AIIntelligentModeConfigViewSet(viewsets.ViewSet):
         logger.info(f"API URL: {config.base_url}")
         logger.info(f"API Key前缀: {config.api_key[:10]}..." if len(config.api_key) > 10 else f"API Key: {config.api_key}")
 
-        base_url = config.base_url
-        if not base_url:
-            # 使用默认Base URL
-            provider = config.model_type
-            if provider == 'openai':
-                base_url = 'https://api.openai.com/v1'
-            elif provider == 'siliconflow':
-                base_url = 'https://api.siliconflow.cn/v1'
-            elif provider == 'deepseek':
-                base_url = 'https://api.deepseek.com'
-            elif provider == 'anthropic':
-                base_url = 'https://api.anthropic.com'
-
-        if not base_url:
+        # 使用默认Base URL（统一由 apps.core.llm 维护各厂商默认地址）
+        if not resolve_base_url(config.model_type, config.base_url):
             return Response(
                 {'error': 'Base URL is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        base_url = base_url.rstrip('/')
-
-        try:
-            url = f"{base_url}/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {config.api_key}",
-                "Content-Type": "application/json"
-            }
-
-            data = {
-                "model": config.model_name,
-                "messages": [{"role": "user", "content": "Hi"}],
-                "max_tokens": 1
-            }
-
-            logger.info(f"AI智能模式 - 发送POST请求到: {url}")
-            # 增加超时时间：连接超时60秒，读取超时900秒
-            response = requests.post(url, headers=headers, json=data, timeout=(60, 900))
-
-            logger.info(f"AI智能模式 - 收到响应: status_code={response.status_code}")
-
-            if response.status_code == 200:
-                logger.info("AI智能模式 - API连接测试成功")
-                return Response({'message': '连接成功'})
-            else:
-                logger.error(f"AI智能模式 - API调用返回错误: Status={response.status_code}, Body={response.text}")
-                return Response(
-                    {'error': f'连接失败: {response.status_code} - {response.text}'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        except requests.exceptions.Timeout as e:
-            logger.error(f"AI智能模式 - API连接测试超时: {repr(e)}")
-            return Response(
-                {'error': '连接测试超时: 请检查网络连接或API地址是否正确'},
-                status=status.HTTP_408_REQUEST_TIMEOUT
-            )
-        except Exception as e:
-            logger.error(f"AI智能模式 - API连接测试异常: {repr(e)}")
-            return Response(
-                {'error': f'连接异常: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        return _probe_connection(config, 'AI智能模式')

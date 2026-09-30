@@ -18,6 +18,33 @@ from langchain_openai import ChatOpenAI
 load_dotenv()
 
 # ============================================================================
+# VERSION GUARD: 以下所有补丁都是针对 browser-use 0.10.1 编写和测试的。
+# 升级 browser-use 版本时，必须逐一复审每个补丁是否仍然需要、是否仍然兼容。
+# ============================================================================
+import importlib.metadata as _meta
+
+_BROWSER_USE_VERSION = _meta.version('browser-use')
+_EXPECTED_BROWSER_USE_VERSION = '0.10.1'
+if _BROWSER_USE_VERSION != _EXPECTED_BROWSER_USE_VERSION:
+    logger.warning(
+        f"⚠️ browser-use 版本不匹配: 当前 {_BROWSER_USE_VERSION}, "
+        f"补丁针对 {_EXPECTED_BROWSER_USE_VERSION} 编写。"
+        f"请复审 ai_base.py 中的所有猴子补丁是否仍然兼容。"
+    )
+
+# 补丁清单（升级 browser-use 时逐项复审）:
+# 1. ChatOpenAI.model_config          — 允许额外字段，browser-use token 计数需要
+# 2. ActionModel.model_config         — 允许额外字段
+# 3. Agent.get_model_output           — 直接 JSON 解析 + 超时重试 + 动作规范化
+# 4. TokenCost.register_llm           — 消息清洗 + 响应解析 + token 统计
+# 5. BrowserSession.connect           — Windows CDP 端口发现
+# 6. ClickElementAction.__init__      — 参数格式自动修复
+# 7. ToolRegistry.execute_action      — switch_tab 别名 + input 参数格式修复 + 点击后延迟
+# 8. ScreenshotWatchdog.on_ScreenshotEvent — 超时兜底 + placeholder
+# 9. DOMWatchdog._capture_clean_screenshot — 超时兜底
+# 10. AgentOutput.__getattr__ + Agent._judge_and_log — verdict 属性兜底
+
+# ============================================================================
 # PART 1: Common Patches (Pydantic, ActionModel, TokenCost, Basic Connection)
 # ============================================================================
 
@@ -42,9 +69,9 @@ try:
     from pydantic import ConfigDict
 
     ActionModel.model_config = ConfigDict(arbitrary_types_allowed=True, extra='allow')
-    logger.info("✅ Modified ActionModel.model_config to allow extra fields")
+    logger.info("✅ [Patch #2] Modified ActionModel.model_config to allow extra fields")
 except Exception as e:
-    logger.warning(f"⚠️ Failed to modify ActionModel config: {e}")
+    logger.warning(f"⚠️ [Patch #2] Failed to modify ActionModel config: {e}")
 
 # Patch Agent.get_model_output 方法
 try:
@@ -172,9 +199,9 @@ try:
 
 
     Agent.get_model_output = _patched_get_model_output
-    logger.info("✅ Successfully patched Agent.get_model_output")
+    logger.info("✅ [Patch #3] Successfully patched Agent.get_model_output")
 except Exception as e:
-    logger.error(f"❌ Failed to patch Agent.get_model_output: {e}")
+    logger.error(f"❌ [Patch #3] Failed to patch Agent.get_model_output: {e}")
 
 # Patch TokenCost
 try:
@@ -369,9 +396,9 @@ try:
 
 
     TokenCost.register_llm = _patched_register_llm
-    logger.info("✅ Successfully patched TokenCost.register_llm")
+    logger.info("✅ [Patch #4] Successfully patched TokenCost.register_llm")
 except Exception as e:
-    logger.error(f"❌ Failed to patch TokenCost: {e}")
+    logger.error(f"❌ [Patch #4] Failed to patch TokenCost: {e}")
 
 # Patch BrowserSession.connect (Windows CDP fix)
 try:
@@ -416,9 +443,9 @@ try:
 
 
     BrowserSession.connect = _patched_connect
-    logger.info("✅ Successfully patched BrowserSession.connect")
+    logger.info("✅ [Patch #5] Successfully patched BrowserSession.connect")
 except Exception as e:
-    logger.error(f"❌ Failed to patch BrowserSession.connect: {e}")
+    logger.error(f"❌ [Patch #5] Failed to patch BrowserSession.connect: {e}")
 
 # Patch ClickElementAction parameters
 try:
@@ -497,9 +524,9 @@ try:
 
 
     ToolRegistry.execute_action = _patched_execute_action
-    logger.info("✅ Successfully patched ToolRegistry.execute_action with alias support")
+    logger.info("✅ [Patch #7] Successfully patched ToolRegistry.execute_action with alias support")
 except Exception as e:
-    logger.error(f"❌ Failed to patch ToolRegistry: {e}")
+    logger.error(f"❌ [Patch #7] Failed to patch ToolRegistry: {e}")
 
 # Patch ScreenshotWatchdog GLOBALLY to fix timeouts
 try:
@@ -555,7 +582,7 @@ try:
 
         on_ScreenshotEvent._is_patched_global = True
         ScreenshotWatchdog.on_ScreenshotEvent = on_ScreenshotEvent
-        logger.info("✅ Applied Global ScreenshotWatchdog Patch")
+        logger.info("✅ [Patch #8] Applied Global ScreenshotWatchdog Patch")
 
     # Patch DOMWatchdog
     from browser_use.browser.watchdogs.dom_watchdog import DOMWatchdog
@@ -574,10 +601,10 @@ try:
 
         _capture_clean_screenshot._is_patched_global = True
         DOMWatchdog._capture_clean_screenshot = _capture_clean_screenshot
-        logger.info("✅ Applied Global DOMWatchdog Patch")
+        logger.info("✅ [Patch #9] Applied Global DOMWatchdog Patch")
 
 except Exception as e:
-    logger.error(f"❌ Failed to apply Global Watchdog patches: {e}")
+    logger.error(f"❌ [Patch #8/#9] Failed to apply Global Watchdog patches: {e}")
 
 # Patch Agent verdict
 try:
@@ -615,29 +642,16 @@ try:
 except Exception:
     pass
 
-# Patch LocalBrowserWatchdog._find_free_port to force port 9222 on Linux
-try:
-    from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
-    import platform
-
-    _original_find_free_port = LocalBrowserWatchdog._find_free_port
-
-    # 创建补丁函数 - 始终作为实例方法（接受 self）
-    def _patched_find_free_port(self):
-        if platform.system() == 'Linux':
-            logger.info("🔧 Force using port 9222 for Linux environment")
-            return 9222
-        # 尝试调用原始方法，兼容不同签名
-        try:
-            return _original_find_free_port(self)
-        except TypeError:
-            # 如果原始方法不接受 self，尝试不带参数调用
-            return _original_find_free_port()
-
-    LocalBrowserWatchdog._find_free_port = _patched_find_free_port
-    logger.info("✅ Successfully patched LocalBrowserWatchdog._find_free_port")
-except Exception as e:
-    logger.error(f"❌ Failed to patch LocalBrowserWatchdog._find_free_port: {e}")
+# 注意：这里以前有一个把 LocalBrowserWatchdog._find_free_port 强制改成
+# "Linux 下永远返回 9222" 的补丁，配合下面 _create_browser_profile 里硬编码的
+# --remote-debugging-port=9222，目的是让 BrowserSession.connect 的兜底逻辑
+# 有个固定端口可用。但 browser-use 官方的 _find_free_port 本来就是"每次启动
+# 绑一个空闲端口"，专门为支持多个浏览器实例并发设计；强行锁成 9222 之后，
+# 两个 AI 任务一旦同时跑，会互相抢占同一个 CDP 端口、_cleanup_zombie_chrome
+# 也会把对方的浏览器进程一起杀掉（这也是 tasks.py 里把 AI 队列限制成
+# --concurrency=1 的根本原因）。现在去掉这个补丁 + 下面的硬编码端口参数，
+# 让 browser-use 用它官方的动态端口分配，多个 worker/任务并发时天然互不冲突。
+# （--concurrency=1 的部署限制本身可以保留一段时间作为保险，但不再是"必须"。）
 
 # ============================================================================
 # PART 2: Helper Classes
@@ -698,42 +712,19 @@ class BaseBrowserAgent:
         if not self.api_key:
             raise ValueError(f"No API Key found for mode: {execution_mode}")
 
-        # 智能temperature处理：特殊模型强制使用特定temperature值
-        # 格式: {'模型名称关键字': temperature值}
-        special_model_temperature_map = {
-            'kimi-2.5': 1.0,  # Moonshot AI Kimi 2.5 只支持 temperature=1
-            'kimi-k2.5': 1.0,  # Moonshot AI Kimi K2.5 只支持 temperature=1
-            'kimi': 1.0,  # 通用Kimi模型匹配（兜底）
-            # 未来可以在这里添加其他特殊模型，例如：
-            # 'claude-3.5-sonnet': 0.7,
-            # 'gpt-4-turbo': 0.0,
-        }
-
-        # 确定最终使用的temperature值
-        final_temperature = 0.0  # 默认值
-        model_name_lower = self.model_name.lower()
-
-        # 1. 优先检查是否是特殊模型
-        for model_keyword, temp in special_model_temperature_map.items():
-            if model_keyword in model_name_lower:
-                final_temperature = temp
-                logger.info(f"✅ 检测到特殊模型 '{self.model_name}'，使用强制 temperature={temp}")
-                break
-        else:
-            # 2. 如果不是特殊模型，使用配置中的值
-            if 'temperature' in model_config:
-                final_temperature = model_config['temperature']
-                logger.info(f"📋 使用配置的 temperature={final_temperature}")
-            else:
-                # 3. 如果配置中没有，使用默认值
-                final_temperature = 0.0
-                logger.info(f"⚙️ 使用默认 temperature={final_temperature}")
+        # config → ChatOpenAI 参数映射统一由 apps.core.llm 维护
+        # （含厂商默认 Base URL、特殊模型强制 temperature，如 Kimi 只支持 temperature=1）
+        from apps.core.llm import chat_openai_kwargs
+        llm_kwargs = chat_openai_kwargs({
+            'api_key': self.api_key,
+            'base_url': self.base_url,
+            'model_name': self.model_name,
+            'provider': self.provider,
+            'temperature': model_config.get('temperature'),
+        })
 
         self.llm = ChatOpenAI(
-            model=self.model_name,
-            api_key=self.api_key,
-            base_url=self.base_url,
-            temperature=final_temperature,
+            **llm_kwargs,
             callbacks=[RawResponseLogger()]
         )
 
@@ -823,100 +814,72 @@ class BaseBrowserAgent:
             return [{'id': 1, 'description': task_description, 'status': 'pending'}]
 
     def _cleanup_zombie_chrome(self):
-        """Clean up any existing Chrome processes on port 9222 (Linux only)"""
+        """
+        清理孤儿 Chrome/Chromium 进程（仅 Linux）。
+
+        以前这里是按命令行里是否包含固定字符串 "9222" 来判断"是不是我们自己
+        启动的僵尸浏览器"，这个判断只在"端口永远固定为 9222"的前提下才成立。
+        现在端口改成动态分配（见上面 _find_free_port 的说明），不能再按端口
+        识别，改成更通用的"孤儿进程"判断：父进程已经不存在、且已经存活超过
+        一定时间的 Chrome/Chromium 进程，认为是上一次任务异常退出后残留的僵尸
+        进程，直接清理；仍有存活父进程的 Chrome 不动它，避免误杀正在运行的任务。
+        """
         import platform
         import psutil
-        
+        import time as _time
+
         if platform.system() != 'Linux':
             return
 
-        logger.info("🧹 Cleaning up zombie Chrome processes...")
+        logger.info("🧹 Cleaning up orphaned Chrome processes...")
         cleaned_count = 0
+        MIN_AGE_SECONDS = 300  # 至少存活5分钟才考虑清理，避免误杀刚启动的浏览器
+
         try:
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            for proc in psutil.process_iter(['pid', 'name', 'create_time']):
                 try:
-                    # Check for chrome/chromium
-                    if proc.info['name'] and ('chrome' in proc.info['name'] or 'chromium' in proc.info['name']):
-                        # Check command line for port 9222
-                        cmdline = proc.info.get('cmdline', [])
-                        if cmdline and any('9222' in str(arg) for arg in cmdline):
-                            logger.info(f"Killing zombie chrome pid={proc.pid}")
-                            proc.kill()
-                            cleaned_count += 1
+                    name = proc.info.get('name') or ''
+                    if 'chrome' not in name and 'chromium' not in name:
+                        continue
+
+                    age = _time.time() - (proc.info.get('create_time') or _time.time())
+                    if age < MIN_AGE_SECONDS:
+                        continue
+
+                    # 父进程已经不存在（或已经被系统回收成 pid 1/init 收养）
+                    # 才认为是孤儿，跳过仍有正常父进程存活的浏览器
+                    try:
+                        parent = proc.parent()
+                    except psutil.NoSuchProcess:
+                        parent = None
+
+                    if parent is None or parent.pid == 1:
+                        logger.info(f"Killing orphaned chrome pid={proc.pid}, age={int(age)}s")
+                        proc.kill()
+                        cleaned_count += 1
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     pass
         except Exception as e:
             logger.warning(f"⚠️ Failed to cleanup zombie chrome: {e}")
-        
+
         if cleaned_count > 0:
-            logger.info(f"✅ Cleaned up {cleaned_count} zombie Chrome processes")
+            logger.info(f"✅ Cleaned up {cleaned_count} orphaned Chrome processes")
 
     def _create_browser_profile(self):
         # Default implementation, can be overridden
-        chrome_path = None
         import platform
+        from .browser_paths import find_installed_browser_path, PLAYWRIGHT_CHROMIUM_GLOB_PATTERNS
 
         system = platform.system()
-        if system == 'Windows':
-            paths = [
-                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-                os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe")
-            ]
-            for p in paths:
-                if os.path.exists(p):
-                    chrome_path = p
-                    break
+        # 候选路径统一从 browser_paths.py 读取（原来这里、selenium_engine.py、
+        # views_config.py 各自维护一份不一致的路径列表）。Linux 下额外用
+        # Playwright 缓存目录的通配符模式兜底查找，找不到就让 browser-use 自己安装。
+        extra_globs = PLAYWRIGHT_CHROMIUM_GLOB_PATTERNS if system == 'Linux' else None
+        chrome_path = find_installed_browser_path('chrome', system=system, extra_glob_patterns=extra_globs)
+        if chrome_path:
+            logger.info(f"找到浏览器: {chrome_path}")
         elif system == 'Linux':
-            # Linux 系统常见的 Chrome 路径 - 优先使用我们预装的浏览器
-            paths = [
-                # 优先使用Docker容器中预装的Chromium
-                '/usr/bin/chromium-browser',
-                '/usr/bin/chromium',
-                '/usr/bin/google-chrome',
-                # 检查Playwright安装的浏览器
-                '/ms-playwright/chromium-*/chromium-linux/chromium',
-                '/root/.cache/ms-playwright/chromium-*/chromium-linux/chromium',
-                # 备用路径
-                '/usr/bin/google-chrome-stable',
-                '/opt/google/chrome/chrome',
-                '/snap/bin/chromium',
-            ]
-            for p in paths:
-                # 支持通配符路径
-                if '*' in p:
-                    import glob
-                    matches = glob.glob(p)
-                    if matches:
-                        for match in matches:
-                            if os.path.exists(match) and os.access(match, os.X_OK):
-                                chrome_path = match
-                                logger.info(f"找到浏览器: {chrome_path}")
-                                break
-                        if chrome_path:
-                            break
-                elif os.path.exists(p) and os.access(p, os.X_OK):
-                    chrome_path = p
-                    logger.info(f"找到浏览器: {chrome_path}")
-                    break
-            
-            # 如果还是没找到，尝试查找Playwright的默认路径或让browser-use自行安装
-            if not chrome_path:
-                import glob
-                playwright_paths = glob.glob('/ms-playwright/**/chromium', recursive=True)
-                playwright_paths.extend(glob.glob('/root/.cache/ms-playwright/**/chromium', recursive=True))
-                playwright_paths.extend(glob.glob('/ms-playwright/**/chromium-linux/chromium', recursive=True))
-                playwright_paths.extend(glob.glob('/root/.cache/ms-playwright/**/chromium-linux/chromium', recursive=True))
-                for p in playwright_paths:
-                    if os.path.exists(p) and os.access(p, os.X_OK):
-                        chrome_path = p
-                        logger.info(f"通过Playwright找到浏览器: {chrome_path}")
-                        break
-                
-                # 最后的备用方案：让browser-use自行处理浏览器安装
-                if not chrome_path:
-                    logger.info("未找到预装浏览器，将让browser-use自动安装")
-                    chrome_path = None  # 让browser-use处理
+            logger.info("未找到预装浏览器，将让browser-use自动安装")
 
         # 基础性能优化参数
         extra_args = [
@@ -940,7 +903,8 @@ class BaseBrowserAgent:
                 '--disable-gpu',  # 禁用 GPU 加速（服务器通常无 GPU）
                 '--headless=new',  # Linux 服务器使用无头模式
                 '--disable-software-rasterizer',  # 禁用软件光栅化器
-                '--remote-debugging-port=9222',  # 使用固定端口，避免随机端口导致连接失败
+                # 不再固定 --remote-debugging-port，交给 browser-use 自己的
+                # _find_free_port 动态分配，避免多个并发任务抢占同一个端口
                 '--remote-debugging-address=0.0.0.0', # 允许远程连接，而不仅仅是 127.0.0.1
                 '--no-zygote',  # 减少进程数
                 '--single-process',  # 单进程模式，虽然不稳定但能解决某些 Docker 环境下的 PID 问题
@@ -950,7 +914,7 @@ class BaseBrowserAgent:
             extra_args.extend([
                 '--no-sandbox',  # 兼容性
                 '--disable-gpu',
-                '--remote-debugging-port=9222',
+                # 同上：不再固定端口，交给 browser-use 动态分配
             ])
 
         return BrowserProfile(

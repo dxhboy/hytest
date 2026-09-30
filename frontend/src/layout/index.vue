@@ -130,26 +130,14 @@
               <el-icon><Document /></el-icon>
               <span>{{ $t("menu.caseManagement") }}</span>
             </el-menu-item>
-            <el-tooltip
-              content="脚本模式暂未接入执行引擎，保存的脚本目前无法运行，建议使用「用例管理」的低代码模式"
-              placement="right"
-            >
-              <el-menu-item index="/ui-automation/scripts-enhanced">
-                <el-icon><Edit /></el-icon>
-                <span>{{ $t("menu.scriptGeneration") }}</span>
-                <el-tag size="small" type="warning" effect="plain" style="margin-left: 6px">实验性</el-tag>
-              </el-menu-item>
-            </el-tooltip>
-            <el-tooltip
-              content="脚本模式暂未接入执行引擎，保存的脚本目前无法运行，建议使用「用例管理」的低代码模式"
-              placement="right"
-            >
-              <el-menu-item index="/ui-automation/scripts">
-                <el-icon><DocumentCopy /></el-icon>
-                <span>{{ $t("menu.scriptList") }}</span>
-                <el-tag size="small" type="warning" effect="plain" style="margin-left: 6px">实验性</el-tag>
-              </el-menu-item>
-            </el-tooltip>
+            <el-menu-item index="/ui-automation/scripts-enhanced">
+              <el-icon><Edit /></el-icon>
+              <span>{{ $t("menu.scriptGeneration") }}</span>
+            </el-menu-item>
+            <el-menu-item index="/ui-automation/scripts">
+              <el-icon><DocumentCopy /></el-icon>
+              <span>{{ $t("menu.scriptList") }}</span>
+            </el-menu-item>
             <el-menu-item index="/ui-automation/suites">
               <el-icon><Collection /></el-icon>
               <span>{{ $t("menu.suiteManagement") }}</span>
@@ -267,11 +255,12 @@
                 class="language-dropdown"
               >
                 <span class="language-selector">
-                  <span class="language-flag">{{
-                    appStore.language === "zh-cn" ? "🇨🇳" : "🇺🇸"
-                  }}</span>
-                  <span>{{ currentLanguage }}</span>
-                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                  <svg class="lang-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10A15.3 15.3 0 0 1 12 2z"/>
+                  </svg>
+                  <span class="lang-text">{{ appStore.language === "zh-cn" ? "中文" : "EN" }}</span>
+                  <el-icon class="lang-arrow"><ArrowDown /></el-icon>
                 </span>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -279,24 +268,33 @@
                       command="zh-cn"
                       :disabled="appStore.language === 'zh-cn'"
                     >
-                      <span class="dropdown-flag">🇨🇳</span> 简体中文
+                      简体中文
                     </el-dropdown-item>
                     <el-dropdown-item
                       command="en"
                       :disabled="appStore.language === 'en'"
                     >
-                      <span class="dropdown-flag">🇺🇸</span> English
+                      English
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
 
+              <span class="header-divider" />
+
               <!-- 用户信息 -->
               <el-dropdown @command="handleCommand" class="user-dropdown">
                 <span class="user-info">
-                  <el-avatar :size="32" :src="userStore.user?.avatar" />
+                  <span class="user-avatar-wrapper">
+                    <el-avatar
+                      v-if="userStore.user?.avatar"
+                      :size="30"
+                      :src="userStore.user.avatar"
+                    />
+                    <span v-else class="user-avatar-text">{{ (userStore.user?.username || 'U').charAt(0).toUpperCase() }}</span>
+                  </span>
                   <span class="username">{{ userStore.user?.username }}</span>
-                  <el-icon><ArrowDown /></el-icon>
+                  <el-icon class="user-arrow"><ArrowDown /></el-icon>
                 </span>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -358,7 +356,6 @@ import {
   VideoCamera,
 } from "@element-plus/icons-vue";
 import logoSvg from "@/assets/images/logo.svg";
-import logoHomePng from "@/assets/images/logo_home.png";
 import AiAssistantPanel from '@/components/ai-assistant/AiAssistantPanel.vue';
 
 const router = useRouter();
@@ -367,9 +364,7 @@ const userStore = useUserStore();
 const appStore = useAppStore();
 const { t } = useI18n();
 
-const logoImage = computed(() => {
-  return route.path === "/home" ? logoSvg : logoHomePng;
-});
+const logoImage = logoSvg;
 
 // 当前语言显示
 const currentLanguage = computed(() => {
@@ -500,9 +495,8 @@ const handleCommand = (command) => {
   flex-shrink: 0;
 
   .logo-img {
-    width: 100%;
-    height: 100%;
-    object-fit: fill;
+    height: 36px;
+    object-fit: contain;
   }
 }
 
@@ -579,24 +573,20 @@ const handleCommand = (command) => {
     }
   }
 
-  .user-info {
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-    white-space: nowrap;
-
-    .username {
-      margin: 0 8px;
-      color: #303133;
-      font-size: 14px;
-    }
-  }
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 6px;
+}
+
+.header-divider {
+  width: 1px;
+  height: 20px;
+  background: #e4e7ed;
+  margin: 0 4px;
+  flex-shrink: 0;
 }
 
 .language-dropdown {
@@ -604,33 +594,43 @@ const handleCommand = (command) => {
     display: flex;
     align-items: center;
     cursor: pointer;
-    color: #303133;
-    font-size: 14px;
+    color: #606266;
+    font-size: 13px;
     outline: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    gap: 5px;
 
     &:focus {
       outline: none;
     }
 
-    .language-flag {
-      font-size: 18px;
-      margin-right: 5px;
-      line-height: 1;
+    .lang-icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
     }
 
-    span {
-      margin: 0 4px;
+    .lang-text {
+      font-weight: 500;
+    }
+
+    .lang-arrow {
+      font-size: 12px;
+      color: #909399;
+      transition: transform 0.2s;
     }
 
     &:hover {
-      color: #1890ff;
+      background: #f5f7fa;
+      color: #409eff;
+
+      .lang-arrow {
+        color: #409eff;
+      }
     }
   }
-}
-
-.dropdown-flag {
-  font-size: 16px;
-  margin-right: 5px;
 }
 
 .user-dropdown {
@@ -639,10 +639,48 @@ const handleCommand = (command) => {
     align-items: center;
     cursor: pointer;
     white-space: nowrap;
+    padding: 4px 10px 4px 4px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    gap: 8px;
+
+    .user-avatar-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .user-avatar-text {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #409eff, #67c23a);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+    }
 
     .username {
-      margin: 0 8px;
       color: #303133;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .user-arrow {
+      font-size: 12px;
+      color: #909399;
+      transition: transform 0.2s;
+    }
+
+    &:hover {
+      background: #f5f7fa;
+
+      .user-arrow {
+        color: #409eff;
+      }
     }
   }
 }

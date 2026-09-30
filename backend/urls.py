@@ -1,8 +1,10 @@
 from django.contrib import admin
-from django.urls import path, include
+import re
+
+from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
-from django.views.decorators.csrf import csrf_exempt
+from django.views.static import serve as serve_media
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
@@ -33,6 +35,17 @@ urlpatterns = [
     path('api/data-factory/', include('apps.data_factory.urls')),
 ]
 
+# 媒体文件（Allure 报告、截图、录屏等）统一只在这里挂载，由 SERVE_MEDIA 控制。
+# 不用 static()：它在 DEBUG=False 时直接返回空列表，而现有非 Docker 部署依赖 Django 提供 /media/。
+# 生产环境建议由 nginx 直接托管 /media/ 目录，并设置 SERVE_MEDIA=False。
+if settings.SERVE_MEDIA:
+    urlpatterns += [
+        re_path(
+            r'^%s(?P<path>.*)$' % re.escape(settings.MEDIA_URL.lstrip('/')),
+            serve_media,
+            {'document_root': settings.MEDIA_ROOT},
+        ),
+    ]
+
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_FILES_URL, document_root=settings.STATIC_FILES_ROOT)

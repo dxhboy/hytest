@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
 from django.db import models
-from .models import TestCase, TestCaseStep, TestCaseAttachment, TestCaseComment
+from .models import TestCase
 from .serializers import (
     TestCaseSerializer, TestCaseListSerializer, TestCaseCreateSerializer, TestCaseUpdateSerializer
 )

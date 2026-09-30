@@ -918,6 +918,8 @@ export default {
       batchDeleteFailed: "批量删除失败",
       formatFailed: "格式化失败",
       requestFailed: "请求发送失败",
+      executeSuite: "执行测试套件失败",
+      suiteExecutionFailed: "测试套件执行失败：{error}",
     },
     warning: {
       pleaseConnect: "请先建立WebSocket连接",
@@ -929,12 +931,14 @@ export default {
       pleaseSelectProject: "请先选择一个项目",
       pleaseCreateCollection: "请先创建一个集合",
       websocketNotInSuite: "WebSocket项目不支持测试套件功能",
+      suiteExecutionTimeout: "等待执行结果超时，请稍后在执行历史中查看",
     },
     info: {
       websocketClosed: "WebSocket连接已关闭",
       websocketMessageReceived: "收到WebSocket消息",
       websocketConnectedTo: "Websocket已连接至{url}",
       featureInDevelopment: "功能正在开发中......",
+      suiteExecutionQueued: "测试套件已提交后台执行，正在等待结果...",
     },
     confirm: {
       deleteTitle: "确认删除",

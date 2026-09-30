@@ -1,111 +1,60 @@
 # apps/api_testing/signals.py
+"""接口请求断言变更时，自动同步到"原样复制"了这组断言的测试套件步骤
+
+规则：
+- 套件步骤断言与请求**修改前**的断言完全一致 → 视为未自定义的副本，同步为新断言
+- 套件步骤断言已被单独修改 → 保留，不覆盖
+- 套件步骤断言为空 → 执行时本就回退使用请求自身断言（见 utils.run_suite_execution），无需同步
+可通过 settings.API_SUITE_ASSERTION_SYNC（环境变量同名）关闭。
+注意：QuerySet.update()/bulk_update() 不触发 save 信号，不会同步。
+"""
+import copy
+import logging
+
+from django.conf import settings
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
-from django.core.signals import request_finished
-import json
-import logging
 
 from .models import ApiRequest, TestSuiteRequest
 
 logger = logging.getLogger(__name__)
 
-
-class ApiRequestChangeTracker:
-    """跟踪API请求的变更"""
-    _instance = None
-    _changed_requests = set()
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def mark_changed(self, request_id):
-        """标记请求已被修改"""
-        self._changed_requests.add(request_id)
-        logger.info(f"标记请求 {request_id} 为已修改")
-
-    def get_and_clear_changed(self):
-        """获取并清空已修改的请求ID集合"""
-        changed = self._changed_requests.copy()
-        self._changed_requests.clear()
-        return changed
-
-    def has_changes(self, request_id):
-        """检查请求是否有变更"""
-        return request_id in self._changed_requests
+_MISSING = object()
 
 
-tracker = ApiRequestChangeTracker()
+def _sync_enabled():
+    return getattr(settings, 'API_SUITE_ASSERTION_SYNC', True)
 
 
 @receiver(pre_save, sender=ApiRequest)
-def track_api_request_changes(sender, instance, **kwargs):
-    """跟踪API请求的变更"""
-    if instance.pk:  # 更新操作
-        try:
-            old_instance = ApiRequest.objects.get(pk=instance.pk)
-
-            # 检查断言是否发生变化
-            old_assertions = json.dumps(old_instance.assertions, sort_keys=True)
-            new_assertions = json.dumps(instance.assertions, sort_keys=True)
-
-            if old_assertions != new_assertions:
-                tracker.mark_changed(instance.pk)
-                logger.info(f"请求 {instance.pk} 的断言已修改")
-        except ApiRequest.DoesNotExist:
-            pass
+def remember_old_assertions(sender, instance, raw=False, update_fields=None, **kwargs):
+    """记录修改前的断言，挂在当前实例上（不用全局状态，线程安全）"""
+    instance._old_assertions = _MISSING
+    if raw or not instance.pk or not _sync_enabled():
+        return
+    if update_fields is not None and 'assertions' not in update_fields:
+        return
+    old = ApiRequest.objects.filter(pk=instance.pk).values_list('assertions', flat=True).first()
+    if old is not None:
+        instance._old_assertions = old
 
 
 @receiver(post_save, sender=ApiRequest)
-def sync_test_suite_assertions(sender, instance, **kwargs):
-    """同步测试套件中的断言"""
-    # 检查请求的断言是否被修改
-    if tracker.has_changes(instance.pk):
-        logger.info(f"开始同步请求 {instance.pk} 的断言到测试套件")
+def sync_test_suite_assertions(sender, instance, created=False, raw=False, **kwargs):
+    old_assertions = getattr(instance, '_old_assertions', _MISSING)
+    instance._old_assertions = _MISSING
+    if created or raw or old_assertions is _MISSING or old_assertions == instance.assertions:
+        return
+    if not old_assertions:
+        # 原断言为空时不存在"原样复制"的非空副本
+        return
 
-        # 查找所有引用了此请求的测试套件请求
-        suite_requests = TestSuiteRequest.objects.filter(
-            request=instance,
-            assertions__isnull=False  # 只更新那些有自定义断言的
-        ).exclude(assertions=[])
-
-        updated_count = 0
-        for suite_request in suite_requests:
-            try:
-                # 获取当前套件请求的断言
-                current_assertions = suite_request.assertions or []
-
-                # 检查套件请求是否有自定义断言
-                # 如果有，询问是否要更新（这里我们选择保留自定义断言）
-                # 如果需要强制更新，可以添加一个配置选项
-
-                # 可选：如果套件请求的断言是直接从原始请求复制的（没有自定义修改）
-                # 则自动更新
-                if _is_copied_from_original(suite_request, instance):
-                    # 深拷贝原始请求的断言
-                    suite_request.assertions = json.loads(
-                        json.dumps(instance.assertions)
-                    )
-                    suite_request.save(update_fields=['assertions'])
-                    updated_count += 1
-                    logger.info(f"更新测试套件请求 {suite_request.id} 的断言")
-
-            except Exception as e:
-                logger.error(f"更新测试套件请求 {suite_request.id} 失败: {e}")
-
-        logger.info(f"完成同步，更新了 {updated_count} 个测试套件请求")
-
-        # 清除标记
-        tracker.get_and_clear_changed()
-
-
-def _is_copied_from_original(suite_request, api_request):
-    """检查套件请求的断言是否是从原始请求复制的（没有自定义修改）"""
-    # 这里实现一个启发式方法来判断是否是原始断言的副本
-    # 例如：检查断言是否完全相同，或者检查是否有修改标记
-
-    # 简单实现：如果套件请求的断言与原始请求完全相同，则认为是副本
-    return suite_request.assertions == api_request.assertions
-
-# 可选：添加批量同步的action到视图集
+    updated = 0
+    for suite_request in TestSuiteRequest.objects.filter(request=instance).exclude(assertions=[]):
+        if suite_request.assertions != old_assertions:
+            continue  # 已单独自定义，保留
+        suite_request.assertions = copy.deepcopy(instance.assertions)
+        suite_request.save(update_fields=['assertions'])
+        updated += 1
+    if updated:
+        logger.info(f"请求 {instance.pk} 的断言已变更，同步更新了 {updated} 个测试套件步骤")

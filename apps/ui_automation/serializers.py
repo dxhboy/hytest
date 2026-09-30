@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.utils import timezone
 from .models import (
     UiProject, LocatorStrategy, Element, TestScript, TestSuite,
-    TestSuiteScript, TestSuiteTestCase, TestExecution, TestEnvironment,
+    TestSuiteScript, TestSuiteTestCase, TestExecution,
     ElementGroup, PageObject, PageObjectElement, ScriptStep, ScriptElementUsage,
     TestCase, TestCaseStep, TestCaseExecution, OperationRecord,
     UiScheduledTask, UiNotificationLog, UiTaskNotificationSetting,
@@ -196,11 +196,17 @@ class TestSuiteSerializer(serializers.ModelSerializer):
         return TestSuiteTestCaseSerializer(obj.suite_test_cases.all(), many=True).data
 
     def get_test_case_count(self, obj):
-        """获取测试用例数量"""
+        """获取测试用例数量（优先使用 viewset 注解的 test_case_total，避免逐条 COUNT）"""
+        annotated = getattr(obj, 'test_case_total', None)
+        if annotated is not None:
+            return annotated
         return obj.suite_test_cases.count()
 
     def get_script_count(self, obj):
-        """获取脚本数量"""
+        """获取脚本数量（优先使用 viewset 注解的 script_total）"""
+        annotated = getattr(obj, 'script_total', None)
+        if annotated is not None:
+            return annotated
         return obj.suite_scripts.count()
 
 
@@ -284,12 +290,32 @@ class ElementGroupSerializer(serializers.ModelSerializer):
         read_only_fields = ('created_at', 'updated_at')
 
     def get_elements_count(self, obj):
-        """获取分组下的元素数量"""
+        """获取分组下的元素数量（优先使用 viewset 注解的 elements_total）"""
+        annotated = getattr(obj, 'elements_total', None)
+        if annotated is not None:
+            return annotated
         return obj.elements.count()
+
+    def _children_map(self, project_id):
+        """按项目一次性加载全部分组（含元素数量注解）并按父分组归类，递归序列化时复用，避免逐节点查询"""
+        from django.db.models import Count
+        maps = self.context.setdefault('_element_group_children', {})
+        if project_id not in maps:
+            grouped = {}
+            # 沿用模型默认排序 ['order', 'name']，与 obj.elementgroup_set.all() 一致
+            groups = ElementGroup.objects.filter(project_id=project_id).select_related(
+                'project__owner', 'project__login_test_case', 'parent_group'
+            ).prefetch_related('project__members').annotate(
+                elements_total=Count('elements', distinct=True)
+            ).order_by('order', 'name')
+            for group in groups:
+                grouped.setdefault(group.parent_group_id, []).append(group)
+            maps[project_id] = grouped
+        return maps[project_id]
 
     def get_children(self, obj):
         """获取子分组"""
-        children = obj.elementgroup_set.all()
+        children = self._children_map(obj.project_id).get(obj.id, [])
         return ElementGroupSerializer(children, many=True, context=self.context).data
 
 
@@ -759,20 +785,7 @@ class UiScheduledTaskSerializer(serializers.ModelSerializer):
             notification_type = validated_data.get('notification_type', 'webhook')
 
             # 根据通知类型选择合适的通知配置
-            notification_config = None
-            if notification_type in ['webhook', 'both']:
-                # 如果需要Webhook通知，优先选择Webhook配置
-                notification_config = UnifiedNotificationConfig.objects.filter(
-                    config_type__in=['webhook_wechat', 'webhook_feishu', 'webhook_dingtalk'],
-                    is_active=True
-                ).first()
-
-            if not notification_config:
-                # 如果没有找到webhook配置或者是邮件通知，使用默认配置
-                notification_config = UnifiedNotificationConfig.objects.filter(
-                    is_default=True,
-                    is_active=True
-                ).first()
+            notification_config = UnifiedNotificationConfig.select_for_notification_type(notification_type)
 
             # 创建通知设置
             UiTaskNotificationSetting.objects.create(
@@ -804,20 +817,7 @@ class UiScheduledTaskSerializer(serializers.ModelSerializer):
             notification_type = validated_data.get('notification_type', 'webhook')
 
             # 根据通知类型选择合适的通知配置
-            notification_config = None
-            if notification_type in ['webhook', 'both']:
-                # 如果需要Webhook通知，优先选择Webhook配置
-                notification_config = UnifiedNotificationConfig.objects.filter(
-                    config_type__in=['webhook_wechat', 'webhook_feishu', 'webhook_dingtalk'],
-                    is_active=True
-                ).first()
-
-            if not notification_config:
-                # 如果没有找到webhook配置或者是邮件通知，使用默认配置
-                notification_config = UnifiedNotificationConfig.objects.filter(
-                    is_default=True,
-                    is_active=True
-                ).first()
+            notification_config = UnifiedNotificationConfig.select_for_notification_type(notification_type)
 
             # 获取或创建通知设置
             notification_setting, created = UiTaskNotificationSetting.objects.get_or_create(

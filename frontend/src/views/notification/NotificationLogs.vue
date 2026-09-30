@@ -277,24 +277,9 @@
             <el-form-item
               :label="$t('notification.logs.detailDialog.notificationContent')"
             >
-              <div class="notification-content">
-                <div
-                  v-if="parsedNotificationContent"
-                  class="notification-content-parsed"
-                >
-                  <div
-                    class="content-item"
-                    v-for="(item, index) in parsedNotificationContent"
-                    :key="index"
-                  >
-                    <span class="content-label">{{ item.label }}:</span>
-                    <span class="content-value">{{ item.value }}</span>
-                  </div>
-                </div>
-                <div v-else class="notification-content-raw">
-                  <pre>{{ selectedLog.notification_content || "-" }}</pre>
-                </div>
-              </div>
+              <NotificationContentView
+                :content="selectedLog.notification_content"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="24" v-if="selectedLog.error_message">
@@ -326,15 +311,17 @@
 
 <script>
 import { Search } from "@element-plus/icons-vue";
-import { ref, reactive, onMounted, computed } from "vue";
+import NotificationContentView from "@/components/notification/NotificationContentView.vue";
+import { ref, reactive, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
-import axios from "axios";
+import api from "@/utils/api";
 
 export default {
   name: "NotificationLogs",
   components: {
     Search,
+    NotificationContentView,
   },
   setup() {
     const { t, locale } = useI18n();
@@ -390,10 +377,9 @@ export default {
           params.status = searchForm.status;
         }
 
-        const response = await axios.get(
-          "/api/api-testing/notification-logs/",
-          { params },
-        );
+        const response = await api.get("/api-testing/notification-logs/", {
+          params,
+        });
         logsData.value = response.data.results || [];
         pagination.total = response.data.count || 0;
       } catch (error) {
@@ -441,8 +427,8 @@ export default {
     // 查看详情
     const viewDetail = async (row) => {
       try {
-        const response = await axios.get(
-          `/api/api-testing/notification-logs/${row.id}/detail/`,
+        const response = await api.get(
+          `/api-testing/notification-logs/${row.id}/detail/`,
         );
         selectedLog.value = response.data;
         detailDialogVisible.value = true;
@@ -542,99 +528,6 @@ export default {
       return [webhookInfo.name || webhookInfo.type];
     };
 
-    // 解析通知内容为结构化数据
-    const parsedNotificationContent = computed(() => {
-      if (!selectedLog.value || !selectedLog.value.notification_content) {
-        return null;
-      }
-
-      const content = selectedLog.value.notification_content;
-
-      try {
-        const jsonContent = JSON.parse(content);
-        const result = [];
-
-        let contentText = "";
-
-        if (jsonContent.msgtype === "markdown" && jsonContent.markdown) {
-          if (jsonContent.markdown.text) {
-            contentText = jsonContent.markdown.text;
-          } else if (jsonContent.markdown.content) {
-            contentText = jsonContent.markdown.content;
-          }
-        } else if (jsonContent.msg_type === "interactive" && jsonContent.card) {
-          if (
-            jsonContent.card.elements &&
-            jsonContent.card.elements[0] &&
-            jsonContent.card.elements[0].text
-          ) {
-            contentText = jsonContent.card.elements[0].text.content;
-          }
-        }
-
-        if (contentText) {
-          const lines = contentText.split("\n").filter((line) => line.trim());
-
-          lines.forEach((line) => {
-            if (line.includes("**") || line.trim() === "") {
-              return;
-            }
-
-            const colonIndex = line.indexOf(":");
-            if (colonIndex > 0) {
-              const label = line.substring(0, colonIndex).trim();
-              const value = line.substring(colonIndex + 1).trim();
-
-              if (label && value) {
-                result.push({
-                  label: label,
-                  value: value,
-                });
-              }
-            }
-          });
-
-          return result.length > 0 ? result : null;
-        }
-      } catch (e) {
-        console.log("Trying to parse as plain text format");
-      }
-
-      try {
-        const result = [];
-        const lines = content.split("\n").filter((line) => line.trim());
-
-        lines.forEach((line) => {
-          if (!line.trim()) {
-            return;
-          }
-
-          const colonIndex = line.indexOf(":");
-          if (colonIndex > 0) {
-            const label = line.substring(0, colonIndex).trim();
-            const value = line.substring(colonIndex + 1).trim();
-
-            if (
-              label &&
-              value &&
-              !value.includes("'results':") &&
-              !value.includes('"results":')
-            ) {
-              result.push({
-                label: label,
-                value: value,
-              });
-            }
-          }
-        });
-
-        return result.length > 0 ? result : null;
-      } catch (e) {
-        console.error("Parse notification content failed:", e);
-        return null;
-      }
-    });
-
     // 组件挂载时获取数据
     onMounted(() => {
       fetchLogsData();
@@ -648,7 +541,6 @@ export default {
       searchForm,
       pagination,
       sortParams,
-      parsedNotificationContent,
       handleSearch,
       handleReset,
       handleSizeChange,
@@ -711,81 +603,6 @@ export default {
 
 .target-tag {
   margin: 0;
-}
-
-.notification-content {
-  width: 100%;
-}
-
-.notification-content-parsed {
-  background: #ffffff;
-  border-radius: 8px;
-  padding: 20px;
-  border: 1px solid #e4e7ed;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.content-item {
-  display: flex;
-  align-items: flex-start;
-  padding: 12px 0;
-  border-bottom: 1px solid #f0f2f5;
-}
-
-.content-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.content-item:first-child {
-  padding-top: 0;
-}
-
-.content-label {
-  font-weight: 600;
-  color: #606266;
-  min-width: 100px;
-  flex-shrink: 0;
-  margin-right: 16px;
-  font-size: 14px;
-  line-height: 1.8;
-}
-
-.content-value {
-  color: #303133;
-  flex: 1;
-  word-break: break-word;
-  font-size: 14px;
-  line-height: 1.8;
-}
-
-.notification-content-raw pre {
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0;
-  padding: 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
-  border: 1px solid #e4e7ed;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #606266;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.notification-content-raw pre::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.notification-content-raw pre::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
-  border-radius: 3px;
-}
-
-.notification-content-raw pre::-webkit-scrollbar-thumb:hover {
-  background: #a8abb2;
 }
 
 .error-message {

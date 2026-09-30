@@ -97,6 +97,10 @@
             </el-select>
           </div>
           <div class="toolbar-right">
+            <el-button size="small" type="success" @click="showGenerateDialog" :disabled="!projectId">
+              <el-icon><MagicStick /></el-icon>
+              从用例生成
+            </el-button>
             <el-button size="small" @click="formatCode">
               <el-icon><Operation /></el-icon>
               {{ $t("uiAutomation.scriptEditor.format") }}
@@ -241,6 +245,74 @@
         </el-tabs>
       </div>
     </div>
+
+    <!-- 从用例生成脚本弹窗 -->
+    <el-dialog v-model="generateDialogVisible" title="从测试用例生成脚本" width="500px">
+      <el-form label-position="top">
+        <el-form-item label="选择测试用例" required>
+          <el-select
+            v-model="generateForm.testCaseId"
+            filterable
+            placeholder="搜索并选择测试用例"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="tc in testCaseList"
+              :key="tc.id"
+              :label="tc.name"
+              :value="tc.id"
+            >
+              <span>{{ tc.name }}</span>
+              <span style="float: right; color: #909399; font-size: 12px">{{ tc.steps?.length || 0 }} 步</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="框架">
+          <el-radio-group v-model="generateForm.framework">
+            <el-radio value="playwright">Playwright</el-radio>
+            <el-radio value="selenium">Selenium</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="语言">
+          <el-radio-group v-model="generateForm.language">
+            <el-radio value="python">Python</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="generateDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="generating" :disabled="!generateForm.testCaseId" @click="handleGenerate">
+          生成脚本
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="saveDialogVisible"
+      :title="$t('uiAutomation.scriptEditor.saveDialog.title')"
+      width="500px"
+    >
+      <el-form label-position="top">
+        <el-form-item :label="$t('uiAutomation.scriptEditor.saveDialog.scriptName')">
+          <el-input
+            v-model="saveForm.name"
+            :placeholder="$t('uiAutomation.scriptEditor.saveDialog.namePlaceholder')"
+            clearable
+          />
+        </el-form-item>
+        <el-text type="info" size="small">
+          {{ $t('uiAutomation.scriptEditor.saveDialog.autoNameTip') }}
+        </el-text>
+      </el-form>
+      <template #footer>
+        <el-button @click="saveDialogVisible = false">
+          {{ $t("common.cancel") }}
+        </el-button>
+        <el-button type="primary" :loading="saving" @click="confirmSaveScript">
+          {{ $t("common.confirm") }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -257,6 +329,7 @@ import {
   Delete,
   Operation,
   Folder,
+  MagicStick,
 } from "@element-plus/icons-vue";
 
 import {
@@ -265,6 +338,8 @@ import {
   getElementTree,
   getElementGroupTree,
   validateElementLocator,
+  getTestCases,
+  generateScriptFromTestCase,
 } from "@/api/ui_automation";
 
 // i18n
@@ -284,6 +359,16 @@ const executionLogs = ref([]);
 
 const cursorPosition = reactive({ line: 1, column: 1 });
 const saving = ref(false);
+
+// 从用例生成
+const generateDialogVisible = ref(false);
+const generating = ref(false);
+const testCaseList = ref([]);
+const generateForm = reactive({
+  testCaseId: null,
+  framework: 'playwright',
+  language: 'python',
+});
 
 // 标签页控制
 const rightActiveTab = ref("logs");
@@ -524,37 +609,44 @@ const generateScriptName = () => {
   return `${projectName}_${language}_${framework}_${dateStr}_${timestamp}.${extension}`;
 };
 
-const saveScript = async () => {
+const saveDialogVisible = ref(false);
+const saveForm = reactive({ name: "" });
+
+const saveScript = () => {
   if (!projectId.value) {
     ElMessage.warning(t("uiAutomation.scriptEditor.messages.selectProject"));
     return;
   }
-
   if (!scriptContent.value.trim()) {
     ElMessage.warning(t("uiAutomation.scriptEditor.messages.emptyScript"));
     return;
   }
+  saveForm.name = generateScriptName();
+  saveDialogVisible.value = true;
+};
 
+const confirmSaveScript = async () => {
+  if (!saveForm.name.trim()) {
+    ElMessage.warning(t("uiAutomation.scriptEditor.messages.inputName"));
+    return;
+  }
   try {
     saving.value = true;
-
-    const scriptName = generateScriptName();
-
     await createTestScript({
-      name: scriptName,
+      name: saveForm.name.trim(),
       project: projectId.value,
       script_type: "CODE",
       content: scriptContent.value,
       language: scriptLanguage.value,
       framework: scriptFramework.value,
     });
-
+    saveDialogVisible.value = false;
     ElMessage.success(
-      `${t("uiAutomation.scriptEditor.messages.saveSuccess")}: ${scriptName}`,
+      `${t("uiAutomation.scriptEditor.messages.saveSuccess")}: ${saveForm.name}`,
     );
     addLog(
       "success",
-      `${t("uiAutomation.scriptEditor.messages.saveSuccess")}: ${scriptName}`,
+      `${t("uiAutomation.scriptEditor.messages.saveSuccess")}: ${saveForm.name}`,
     );
   } catch (error) {
     console.error("Failed to save script:", error);
@@ -675,6 +767,43 @@ watch(scriptLanguage, (newLang) => {
     t("uiAutomation.scriptEditor.messages.switchLanguage", { lang: newLang }),
   );
 });
+
+// ---- 从用例生成脚本 ----
+
+const showGenerateDialog = async () => {
+  generateForm.testCaseId = null;
+  generateForm.framework = scriptFramework.value;
+  generateForm.language = scriptLanguage.value;
+  generateDialogVisible.value = true;
+
+  try {
+    const resp = await getTestCases({ project: projectId.value, page_size: 200 });
+    testCaseList.value = resp.data?.results || resp.data || [];
+  } catch (e) {
+    ElMessage.error('加载测试用例列表失败');
+  }
+};
+
+const handleGenerate = async () => {
+  if (!generateForm.testCaseId) return;
+  generating.value = true;
+  try {
+    const resp = await generateScriptFromTestCase(generateForm.testCaseId, {
+      framework: generateForm.framework,
+      language: generateForm.language,
+    });
+    scriptContent.value = resp.data.content;
+    scriptFramework.value = generateForm.framework;
+    scriptLanguage.value = generateForm.language;
+    generateDialogVisible.value = false;
+    ElMessage.success(`脚本已生成并保存，共 ${resp.data.step_count} 个步骤`);
+    addLog('info', `从用例生成脚本: ${resp.data.script_name}`);
+  } catch (e) {
+    ElMessage.error('生成脚本失败: ' + (e.response?.data?.error || e.message));
+  } finally {
+    generating.value = false;
+  }
+};
 
 // 组件挂载
 onMounted(async () => {

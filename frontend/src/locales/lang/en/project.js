@@ -81,7 +81,7 @@ export default {
     },
 
     // Title
-    title: "TestHub Testing Platform",
+    title: "HyTest Testing Platform",
     subtitle: "All-in-One Intelligent Testing Solution",
 
     // Cards

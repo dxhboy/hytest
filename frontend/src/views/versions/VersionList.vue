@@ -151,24 +151,29 @@
           width="180"
         >
           <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
+            {{ formatDateMinute(row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column
           :label="$t('project.actions')"
-          width="220"
+          width="200"
           fixed="right"
+          align="center"
         >
           <template #default="{ row }">
-            <el-button size="small" @click="editVersion(row)">{{
-              $t("common.edit")
-            }}</el-button>
-            <el-button size="small" type="primary" plain @click="openJiraDialog(row)">
-              Jira
-            </el-button>
-            <el-button size="small" type="danger" @click="deleteVersion(row)">{{
-              $t("common.delete")
-            }}</el-button>
+            <div class="action-col">
+              <el-button link type="primary" size="small" @click="editVersion(row)">
+                {{ $t("common.edit") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="primary" size="small" @click="openJiraDialog(row)">
+                Jira
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="danger" size="small" @click="deleteVersion(row)">
+                {{ $t("common.delete") }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -187,34 +192,34 @@
     <!-- Jira 需求对话框 -->
     <el-dialog
       v-model="jiraDialogVisible"
-      title="关联 Jira 需求"
+      :title="$t('version.jira.dialogTitle')"
       width="800px"
       :close-on-click-modal="false"
     >
       <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center">
-        <span>该版本关联的 Jira Issues</span>
+        <span>{{ $t("version.jira.relatedIssues") }}</span>
         <el-button type="primary" size="small" @click="loadRecommend(currentJiraVersion?.id)" :loading="recommending">
-          推荐回归用例
+          {{ $t("version.jira.recommendCases") }}
         </el-button>
       </div>
 
       <el-table :data="jiraIssues" v-loading="loadingIssues" size="small">
         <el-table-column prop="issue_key" label="Issue Key" width="120" />
-        <el-table-column prop="issue_summary" label="标题" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="issue_summary" :label="$t('version.jira.issueSummary')" min-width="200" show-overflow-tooltip />
         <el-table-column prop="jira_fix_version" label="Fix Version" width="120" />
-        <el-table-column prop="case_count" label="关联用例数" width="100" />
+        <el-table-column prop="case_count" :label="$t('version.jira.caseCount')" width="100" />
       </el-table>
 
-      <el-drawer v-model="showRecommend" title="推荐回归用例" size="50%">
+      <el-drawer v-model="showRecommend" :title="$t('version.jira.recommendCases')" size="50%">
         <div style="padding: 16px">
-          <p>共 {{ recommendResults.length }} 条推荐用例（已去重）</p>
+          <p>{{ $t("version.jira.recommendTotal", { count: recommendResults.length }) }}</p>
           <el-table :data="recommendResults" size="small">
-            <el-table-column prop="source_issue" label="来源 Issue" width="120" />
-            <el-table-column prop="title" label="用例标题" min-width="200" />
-            <el-table-column prop="case_type" label="类型" width="80">
+            <el-table-column prop="source_issue" :label="$t('version.jira.sourceIssue')" width="120" />
+            <el-table-column prop="title" :label="$t('version.jira.caseTitle')" min-width="200" />
+            <el-table-column prop="case_type" :label="$t('version.jira.caseType')" width="80">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.case_type === 'testcasegenerationtask' ? 'success' : 'info'">
-                  {{ row.case_type === 'testcasegenerationtask' ? 'AI生成' : '手工' }}
+                  {{ row.case_type === 'testcasegenerationtask' ? $t('version.jira.aiGenerated') : $t('version.jira.manual') }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -297,8 +302,8 @@ import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Search, Delete } from "@element-plus/icons-vue";
 import api from "@/utils/api";
-import dayjs from "dayjs";
 import { getJiraIssues, recommendCasesByVersion } from "@/api/jira";
+import { formatDateMinute } from "@/utils/format";
 
 const { t } = useI18n();
 const loading = ref(false);
@@ -553,7 +558,7 @@ const loadJiraIssues = async (versionId) => {
     const res = await getJiraIssues({ version_id: versionId });
     jiraIssues.value = res.data.results || res.data;
   } catch {
-    ElMessage.error("加载 Jira Issues 失败");
+    ElMessage.error(t("version.jira.loadIssuesFailed"));
   } finally {
     loadingIssues.value = false;
   }
@@ -567,15 +572,12 @@ const loadRecommend = async (versionId) => {
     recommendResults.value = res.data.results || res.data;
     showRecommend.value = true;
   } catch {
-    ElMessage.error("加载推荐用例失败");
+    ElMessage.error(t("version.jira.loadRecommendFailed"));
   } finally {
     recommending.value = false;
   }
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm");
-};
 
 const getProjectsTooltip = (projects) => {
   return projects.map((p) => p.name).join("、");

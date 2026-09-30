@@ -65,7 +65,7 @@
           width="180"
         >
           <template #default="scope">
-            {{ formatDate(scope.row.created_at) }}
+            {{ formatDateTime(scope.row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column :label="$t('apiTesting.common.operation')" width="150">
@@ -88,7 +88,7 @@ import { ref, onMounted } from "vue";
 import { ElMessage } from "element-plus";
 import { useI18n } from "vue-i18n";
 import api from "@/utils/api";
-import dayjs from "dayjs";
+import { formatDateTime } from "@/utils/format";
 
 const { t } = useI18n();
 const reports = ref([]);
@@ -158,9 +158,6 @@ const getStatusText = (status) => {
   return statusKey ? t(`apiTesting.report.status.${statusKey}`) : status;
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm:ss");
-};
 
 onMounted(() => {
   loadReports();

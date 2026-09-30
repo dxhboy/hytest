@@ -1,0 +1,9 @@
+# 开发/测试依赖：pip install -r requirements-dev.txt（已包含运行时依赖）
+-r requirements.txt
+
+allure-pytest==2.15.0
+allure-python-commons==2.15.0
+iniconfig==2.1.0
+pluggy==1.6.0
+pytest-django==4.14.0
+pytest==8.4.1

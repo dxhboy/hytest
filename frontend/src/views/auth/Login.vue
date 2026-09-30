@@ -35,7 +35,7 @@
                 />
               </svg>
             </div>
-            <h1 class="brand-title">TestHub</h1>
+            <h1 class="brand-title">HyTest</h1>
           </div>
           <p class="brand-subtitle">AI-Powered Testing Platform</p>
         </div>
@@ -377,7 +377,7 @@ const handleLogin = async () => {
         const result = await userStore.login(form);
         console.log("Login result:", result);
         console.log("User store state:", {
-          token: userStore.token,
+          token: userStore.accessToken,
           user: userStore.user,
           isAuthenticated: userStore.isAuthenticated,
         });

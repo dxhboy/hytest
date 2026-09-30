@@ -1,6 +1,4 @@
 from django.urls import path, include
-from django.conf import settings
-from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from .views import (
     ApiProjectViewSet, ApiCollectionViewSet, ApiRequestViewSet,
@@ -33,5 +31,4 @@ urlpatterns = [
     path('api-testing/', include(router.urls)),
 ]
 
-# 添加媒体文件路由
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# 媒体文件（Allure 报告等）统一由 backend/urls.py 按 SERVE_MEDIA 配置提供，这里不再重复挂载

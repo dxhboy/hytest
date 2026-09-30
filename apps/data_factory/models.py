@@ -17,15 +17,7 @@ class DataFactoryRecord(models.Model):
         ('crontab', 'Crontab工具'),
     )
 
-    TOOL_SCENARIOS = (
-        ('test_data', '测试数据'),
-        ('json', 'JSON工具'),
-        ('string', '字符工具'),
-        ('encoding', '编码工具'),
-        ('random', '随机工具'),
-        ('encryption', '加密工具'),
-        ('crontab', 'Crontab工具'),
-    )
+    TOOL_SCENARIOS = TOOL_CATEGORIES
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name='用户')
     tool_name = models.CharField(max_length=100, verbose_name='工具名称')

@@ -45,4 +45,20 @@ export default {
   batchDeleteConfirm: "确定要删除选中的 {count} 个版本吗？此操作不可恢复。",
   batchDeleteSuccess: "成功删除 {successCount} 个版本",
   batchDeleteFailed: "批量删除失败",
+  // Jira
+  jira: {
+    dialogTitle: "关联 Jira 需求",
+    relatedIssues: "该版本关联的 Jira Issues",
+    recommendCases: "推荐回归用例",
+    issueSummary: "标题",
+    caseCount: "关联用例数",
+    recommendTotal: "共 {count} 条推荐用例（已去重）",
+    sourceIssue: "来源 Issue",
+    caseTitle: "用例标题",
+    caseType: "类型",
+    aiGenerated: "AI生成",
+    manual: "手工",
+    loadIssuesFailed: "加载 Jira Issues 失败",
+    loadRecommendFailed: "加载推荐用例失败",
+  },
 };

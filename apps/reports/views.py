@@ -1,19 +1,26 @@
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Count, Q, Sum, F, Avg
-from django.db.models.functions import TruncDate, Length
+from django.db.models import Count, Q
 from django.utils import timezone
 from datetime import timedelta, datetime
 from .models import TestReport, ReportTemplate
 from apps.executions.models import TestPlan, TestRun, TestRunCase
 from apps.testcases.models import TestCase
 from apps.requirement_analysis.models import RequirementAnalysis, GeneratedTestCase, BusinessRequirement
+from apps.projects.access import accessible_project_ids
 
 class TestReportViewSet(viewsets.ModelViewSet):
     """测试报告视图集"""
-    queryset = TestReport.objects.all()
+    queryset = TestReport.objects.all()  # 仅用于路由 basename，实际数据由 get_queryset 按权限过滤
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return TestReport.objects.filter(project_id__in=self._pids())
+
+    def _pids(self):
+        """当前用户可访问的项目 ID 子查询，所有统计都限定在这些项目内"""
+        return accessible_project_ids(self.request.user)
     
     @action(detail=False, methods=['get'])
     def dashboard(self, request):
@@ -21,8 +28,8 @@ class TestReportViewSet(viewsets.ModelViewSet):
         project_id = request.query_params.get('project')
         
         # 基础查询集
-        plans_qs = TestPlan.objects.filter(is_active=True)
-        cases_qs = TestCase.objects.all()
+        plans_qs = TestPlan.objects.filter(is_active=True, projects__in=self._pids()).distinct()
+        cases_qs = TestCase.objects.filter(project_id__in=self._pids())
         
         if project_id:
             plans_qs = plans_qs.filter(projects__id=project_id)
@@ -33,42 +40,45 @@ class TestReportViewSet(viewsets.ModelViewSet):
         total_cases = cases_qs.count()
         
         # 计算测试计划总进度
-        # 遍历所有活跃计划，计算其下所有TestRun的进度平均值
-        total_progress = 0
-        plan_count_for_progress = 0
-        
-        for plan in plans_qs:
-            runs = plan.test_runs.all()
-            if runs.exists():
-                # 计算该计划下所有Run的平均进度
-                run_progresses = [run.progress_stats['progress'] for run in runs]
-                plan_progress = sum(run_progresses) / len(run_progresses)
-                total_progress += plan_progress
-                plan_count_for_progress += 1
-        
-        avg_plan_progress = round(total_progress / plan_count_for_progress, 1) if plan_count_for_progress > 0 else 0
-        
-        # 计算整体通过率
-        recent_runs = TestRun.objects.filter(test_plan__in=plans_qs).order_by('-created_at')[:10]
+        # 所有活跃计划下 TestRun 的进度：一条带注解的查询取回每个 Run 的状态计数，内存中按计划分组求平均
+        runs_qs = TestRun.with_progress_stats(TestRun.objects.filter(test_plan__in=plans_qs))
+        stat_fields = ['_stat_total'] + [f'_stat_{s}' for s in TestRun.STAT_STATUSES]
+
+        def _row_stats(row):
+            counts = {'total': row['_stat_total']}
+            for s in TestRun.STAT_STATUSES:
+                counts[s] = row[f'_stat_{s}']
+            return TestRun.build_progress_stats(counts)
+
+        plan_run_progresses = {}
+        for row in runs_qs.values('test_plan_id', *stat_fields):
+            plan_run_progresses.setdefault(row['test_plan_id'], []).append(_row_stats(row)['progress'])
+
+        # 仅统计有 Run 的计划：先求计划内 Run 平均进度，再对计划求平均
+        plan_progresses = [sum(p) / len(p) for p in plan_run_progresses.values()]
+        avg_plan_progress = round(sum(plan_progresses) / len(plan_progresses), 1) if plan_progresses else 0
+
+        # 计算整体通过率（最近 10 个 Run）
+        recent_rows = runs_qs.order_by('-created_at').values(*stat_fields)[:10]
         total_executed = 0
         total_passed = 0
-        
-        for run in recent_runs:
-            stats = run.progress_stats
-            total_executed += stats['tested']
+
+        for row in recent_rows:
+            stats = _row_stats(row)
+            total_executed += stats.get('tested', 0)
             total_passed += stats['passed']
-            
+
         pass_rate = round((total_passed / total_executed * 100), 1) if total_executed > 0 else 0
-        
-        # 统计缺陷总数 (基于 TestRunCase 的 defects 字段)
-        all_runs = TestRun.objects.filter(test_plan__in=plans_qs)
+
+        # 统计缺陷总数 (基于 TestRunCase 的 defects 字段)，一次取回非空 defects 列
         defects_count = 0
-        for run in all_runs:
-            run_cases_with_defects = run.run_cases.exclude(defects=[])
-            for rc in run_cases_with_defects:
-                if isinstance(rc.defects, list):
-                    defects_count += len(rc.defects)
-        
+        defects_values = TestRunCase.objects.filter(
+            test_run__test_plan__in=plans_qs
+        ).exclude(defects=[]).values_list('defects', flat=True)
+        for defects in defects_values:
+            if isinstance(defects, list):
+                defects_count += len(defects)
+
         return Response({
             'active_plans': total_plans,
             'plan_progress': avg_plan_progress,
@@ -83,7 +93,7 @@ class TestReportViewSet(viewsets.ModelViewSet):
         project_id = request.query_params.get('project')
         version_id = request.query_params.get('version')
         
-        runs_qs = TestRun.objects.all()
+        runs_qs = TestRun.objects.filter(project_id__in=self._pids())
         if project_id:
             runs_qs = runs_qs.filter(project_id=project_id)
         if version_id:
@@ -104,7 +114,7 @@ class TestReportViewSet(viewsets.ModelViewSet):
     def defect_distribution(self, request):
         """获取缺陷分布 (按优先级)"""
         project_id = request.query_params.get('project')
-        qs = TestRunCase.objects.filter(status='failed')
+        qs = TestRunCase.objects.filter(status='failed', test_run__project_id__in=self._pids())
         
         if project_id:
             qs = qs.filter(test_run__project_id=project_id)
@@ -127,7 +137,7 @@ class TestReportViewSet(viewsets.ModelViewSet):
         """获取失败用例TOP榜"""
         project_id = request.query_params.get('project')
         
-        qs = TestRunCase.objects.filter(status='failed')
+        qs = TestRunCase.objects.filter(status='failed', test_run__project_id__in=self._pids())
         if project_id:
             qs = qs.filter(test_run__project_id=project_id)
             
@@ -160,7 +170,8 @@ class TestReportViewSet(viewsets.ModelViewSet):
         
         qs = TestRunCase.objects.filter(
             executed_at__gte=start_datetime,
-            status__in=['passed', 'failed', 'blocked', 'retest']
+            status__in=['passed', 'failed', 'blocked', 'retest'],
+            test_run__project_id__in=self._pids(),
         )
         
         if project_id:
@@ -197,9 +208,9 @@ class TestReportViewSet(viewsets.ModelViewSet):
         """获取AI效能分析"""
         project_id = request.query_params.get('project')
         
-        cases_qs = TestCase.objects.all()
-        generated_qs = GeneratedTestCase.objects.all()
-        requirements_qs = BusinessRequirement.objects.all()
+        cases_qs = TestCase.objects.filter(project_id__in=self._pids())
+        generated_qs = GeneratedTestCase.objects.filter(requirement__analysis__document__project_id__in=self._pids())
+        requirements_qs = BusinessRequirement.objects.filter(analysis__document__project_id__in=self._pids())
         
         if project_id:
             cases_qs = cases_qs.filter(project_id=project_id)
@@ -240,7 +251,8 @@ class TestReportViewSet(viewsets.ModelViewSet):
         
         qs = TestRunCase.objects.filter(
             status__in=['passed', 'failed', 'blocked', 'retest'],
-            executed_by__isnull=False
+            executed_by__isnull=False,
+            test_run__project_id__in=self._pids(),
         )
         
         if project_id:

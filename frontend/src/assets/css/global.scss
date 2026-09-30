@@ -61,6 +61,25 @@ body {
   text-overflow: ellipsis;
 }
 
+.action-col {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0;
+
+  .el-button + .el-button {
+    margin-left: 0;
+  }
+
+  .action-divider {
+    width: 1px;
+    height: 14px;
+    background: #dcdfe6;
+    margin: 0 6px;
+    flex-shrink: 0;
+  }
+}
+
 @media screen and (max-width: 1920px) {
   body {
     font-size: 14px;

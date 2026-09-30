@@ -6,6 +6,15 @@ from .models import (
 )
 
 
+def _authenticated_user(serializer):
+    """获取当前请求的登录用户；未登录时直接报校验错误，不再回退到超级用户（避免记录归属错误）"""
+    request = serializer.context.get('request')
+    user = getattr(request, 'user', None)
+    if user is None or not user.is_authenticated:
+        raise serializers.ValidationError('需要登录后才能执行此操作')
+    return user
+
+
 class RequirementDocumentSerializer(serializers.ModelSerializer):
     uploaded_by_name = serializers.CharField(source='uploaded_by.username', read_only=True)
     project_name = serializers.CharField(source='project.name', read_only=True)
@@ -90,17 +99,8 @@ class DocumentUploadSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'file', 'project']
     
     def create(self, validated_data):
-        # 自动设置上传者（如果用户已登录）
-        user = self.context['request'].user
-        if user.is_authenticated:
-            validated_data['uploaded_by'] = user
-        else:
-            # 如果是匿名用户，使用第一个超级用户作为默认用户
-            from apps.users.models import User
-            default_user = User.objects.filter(is_superuser=True).first()
-            if not default_user:
-                default_user = User.objects.first()
-            validated_data['uploaded_by'] = default_user
+        # 自动设置上传者为当前登录用户
+        validated_data['uploaded_by'] = _authenticated_user(self)
         
         # 根据文件扩展名设置文档类型
         file = validated_data['file']
@@ -192,16 +192,7 @@ class AIModelConfigSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         # 自动设置创建者
-        user = self.context['request'].user
-        if user.is_authenticated:
-            validated_data['created_by'] = user
-        else:
-            # 如果是匿名用户，使用第一个超级用户作为默认用户
-            from apps.users.models import User
-            default_user = User.objects.filter(is_superuser=True).first()
-            if not default_user:
-                default_user = User.objects.first()
-            validated_data['created_by'] = default_user
+        validated_data['created_by'] = _authenticated_user(self)
         
         return super().create(validated_data)
 
@@ -220,16 +211,7 @@ class PromptConfigSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         # 自动设置创建者
-        user = self.context['request'].user
-        if user.is_authenticated:
-            validated_data['created_by'] = user
-        else:
-            # 如果是匿名用户，使用第一个超级用户作为默认用户
-            from apps.users.models import User
-            default_user = User.objects.filter(is_superuser=True).first()
-            if not default_user:
-                default_user = User.objects.first()
-            validated_data['created_by'] = default_user
+        validated_data['created_by'] = _authenticated_user(self)
         
         return super().create(validated_data)
 
@@ -259,15 +241,7 @@ class TestCaseGenerationTaskSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         # 自动设置创建者和任务ID
         import uuid
-        user = self.context['request'].user
-        if user.is_authenticated:
-            validated_data['created_by'] = user
-        else:
-            from apps.users.models import User
-            default_user = User.objects.filter(is_superuser=True).first()
-            if not default_user:
-                default_user = User.objects.first()
-            validated_data['created_by'] = default_user
+        validated_data['created_by'] = _authenticated_user(self)
         
         validated_data['task_id'] = f"TASK_{uuid.uuid4().hex[:8].upper()}"
         

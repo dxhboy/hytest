@@ -3,7 +3,7 @@
   <div class="recorder-toolbar">
     <el-input
       v-model="targetUrl"
-      :placeholder="$t('recorder.urlPlaceholder')"
+      :placeholder="$t('uiAutomation.recorder.urlPlaceholder')"
       :disabled="isRecording"
       class="url-input"
       @keydown.enter="onNavigate"
@@ -11,12 +11,12 @@
       <template #prepend>URL</template>
       <template #append>
         <el-button @click="onNavigate" :disabled="!targetUrl || isRecording">
-          {{ $t('recorder.go') }}
+          {{ $t('uiAutomation.recorder.go') }}
         </el-button>
       </template>
     </el-input>
 
-    <el-select v-model="selectedProjectId" :placeholder="$t('recorder.selectProject')" :disabled="isRecording" class="project-select">
+    <el-select v-model="selectedProjectId" :placeholder="$t('uiAutomation.recorder.selectProject')" :disabled="isRecording" class="project-select">
       <el-option
         v-for="p in projects"
         :key="p.id"
@@ -33,7 +33,7 @@
         :disabled="!targetUrl || !selectedProjectId"
         @click="onStart"
       >
-        {{ $t('recorder.startRecording') }}
+        {{ $t('uiAutomation.recorder.startRecording') }}
       </el-button>
 
       <el-button
@@ -42,14 +42,14 @@
         :icon="VideoPause"
         @click="onStop"
       >
-        {{ $t('recorder.stopRecording') }}
+        {{ $t('uiAutomation.recorder.stopRecording') }}
       </el-button>
 
       <el-button
         v-if="isRecording"
         @click="$emit('cancel')"
       >
-        {{ $t('recorder.cancel') }}
+        {{ $t('uiAutomation.recorder.cancel') }}
       </el-button>
     </div>
   </div>
@@ -110,13 +110,15 @@ defineExpose({ targetUrl, selectedProjectId })
 }
 .url-input {
   flex: 1;
-  min-width: 300px;
+  min-width: 200px;
 }
 .project-select {
-  width: 200px;
+  width: 160px;
+  flex-shrink: 0;
 }
 .toolbar-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
 }
 </style>

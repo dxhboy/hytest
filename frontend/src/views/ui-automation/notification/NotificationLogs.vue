@@ -140,17 +140,15 @@
         <el-table-column
           :label="$t('uiAutomation.common.operation')"
           fixed="right"
-          width="120"
+          width="100"
+          align="center"
         >
           <template #default="{ row }">
-            <el-button
-              type="primary"
-              link
-              size="small"
-              @click="viewDetail(row)"
-            >
-              {{ $t("uiAutomation.notification.logs.viewDetail") }}
-            </el-button>
+            <div class="action-col">
+              <el-button link type="primary" size="small" @click="viewDetail(row)">
+                {{ $t("uiAutomation.notification.logs.viewDetail") }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -258,24 +256,9 @@
           </el-col>
           <el-col :span="24">
             <el-form-item :label="$t('uiAutomation.notification.logs.content')">
-              <div class="notification-content">
-                <div
-                  v-if="parsedNotificationContent"
-                  class="notification-content-parsed"
-                >
-                  <div
-                    class="content-item"
-                    v-for="(item, index) in parsedNotificationContent"
-                    :key="index"
-                  >
-                    <span class="content-label">{{ item.label }}:</span>
-                    <span class="content-value">{{ item.value }}</span>
-                  </div>
-                </div>
-                <div v-else class="notification-content-raw">
-                  <pre>{{ selectedLog.notification_content || "-" }}</pre>
-                </div>
-              </div>
+              <NotificationContentView
+                :content="selectedLog.notification_content"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="24" v-if="selectedLog.error_message">
@@ -307,7 +290,8 @@
 
 <script>
 import { Search } from "@element-plus/icons-vue";
-import { ref, reactive, onMounted, computed } from "vue";
+import NotificationContentView from "@/components/notification/NotificationContentView.vue";
+import { ref, reactive, onMounted } from "vue";
 import { ElMessage } from "element-plus";
 import { getNotificationLogs } from "@/api/ui_automation.js";
 import { useI18n } from "vue-i18n";
@@ -316,6 +300,7 @@ export default {
   name: "NotificationLogs",
   components: {
     Search,
+    NotificationContentView,
   },
   setup() {
     const { t, locale } = useI18n();
@@ -477,115 +462,6 @@ export default {
       return typeMap[typeDisplay] || "info";
     };
 
-    // 解析通知内容为结构化数据
-    const parsedNotificationContent = computed(() => {
-      if (!selectedLog.value || !selectedLog.value.notification_content) {
-        return null;
-      }
-
-      const content = selectedLog.value.notification_content;
-
-      try {
-        // 尝试解析JSON格式的通知内容(Webhook)
-        const jsonContent = JSON.parse(content);
-        const result = [];
-
-        // 提取内容文本
-        let contentText = "";
-
-        // 处理企业微信格式
-        if (jsonContent.msgtype === "markdown" && jsonContent.markdown) {
-          // 优先使用text字段(钉钉格式)
-          if (jsonContent.markdown.text) {
-            contentText = jsonContent.markdown.text;
-          } else if (jsonContent.markdown.content) {
-            contentText = jsonContent.markdown.content;
-          }
-        }
-        // 处理飞书格式
-        else if (jsonContent.msg_type === "interactive" && jsonContent.card) {
-          if (
-            jsonContent.card.elements &&
-            jsonContent.card.elements[0] &&
-            jsonContent.card.elements[0].text
-          ) {
-            contentText = jsonContent.card.elements[0].text.content;
-          }
-        }
-
-        if (contentText) {
-          // 解析文本内容,提取关键信息
-          const lines = contentText.split("\n").filter((line) => line.trim());
-
-          lines.forEach((line) => {
-            // 跳过标题行(包含**的行)和空行
-            if (line.includes("**") || line.trim() === "") {
-              return;
-            }
-
-            // 解析键值对
-            const colonIndex = line.indexOf(":");
-            if (colonIndex > 0) {
-              const label = line.substring(0, colonIndex).trim();
-              const value = line.substring(colonIndex + 1).trim();
-
-              if (label && value) {
-                result.push({
-                  label: label,
-                  value: value,
-                });
-              }
-            }
-          });
-
-          return result.length > 0 ? result : null;
-        }
-      } catch (e) {
-        // JSON解析失败,尝试作为纯文本解析(邮件通知)
-        console.log("Attempting to parse as plain text format");
-      }
-
-      // 解析纯文本格式的邮件内容
-      try {
-        const result = [];
-        const lines = content.split("\n").filter((line) => line.trim());
-
-        lines.forEach((line) => {
-          // 跳过空行
-          if (!line.trim()) {
-            return;
-          }
-
-          // 解析键值对 (格式: "标签: 值")
-          const colonIndex = line.indexOf(":");
-          if (colonIndex > 0) {
-            const label = line.substring(0, colonIndex).trim();
-            const value = line.substring(colonIndex + 1).trim();
-
-            // 过滤掉包含详细测试结果的行(通常会是大字典或JSON字符串)
-            // 跳过包含'results'关键字的超长值
-            if (
-              label &&
-              value &&
-              !value.includes("'results':") &&
-              !value.includes('"results":')
-            ) {
-              result.push({
-                label: label,
-                value: value,
-              });
-            }
-          }
-        });
-
-        return result.length > 0 ? result : null;
-      } catch (e) {
-        // 如果所有解析都失败,返回null以显示原始内容
-        console.error("Failed to parse notification content:", e);
-        return null;
-      }
-    });
-
     // 组件挂载时获取数据
     onMounted(() => {
       fetchLogsData();
@@ -599,7 +475,6 @@ export default {
       searchForm,
       pagination,
       sortParams,
-      parsedNotificationContent,
       handleSearch,
       handleReset,
       handleSizeChange,
@@ -648,81 +523,6 @@ export default {
 
 .notification-detail-form :deep(.el-form-item) {
   margin-bottom: 18px;
-}
-
-.notification-content {
-  width: 100%;
-}
-
-.notification-content-parsed {
-  background: #ffffff;
-  border-radius: 8px;
-  padding: 20px;
-  border: 1px solid #e4e7ed;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.content-item {
-  display: flex;
-  align-items: flex-start;
-  padding: 12px 0;
-  border-bottom: 1px solid #f0f2f5;
-}
-
-.content-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.content-item:first-child {
-  padding-top: 0;
-}
-
-.content-label {
-  font-weight: 600;
-  color: #606266;
-  min-width: 100px;
-  flex-shrink: 0;
-  margin-right: 16px;
-  font-size: 14px;
-  line-height: 1.8;
-}
-
-.content-value {
-  color: #303133;
-  flex: 1;
-  word-break: break-word;
-  font-size: 14px;
-  line-height: 1.8;
-}
-
-.notification-content-raw pre {
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0;
-  padding: 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
-  border: 1px solid #e4e7ed;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #606266;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.notification-content-raw pre::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-.notification-content-raw pre::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
-  border-radius: 3px;
-}
-
-.notification-content-raw pre::-webkit-scrollbar-thumb:hover {
-  background: #a8abb2;
 }
 
 .webhook-info {

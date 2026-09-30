@@ -2,6 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from apps.core.permissions import IsStaffOrReadOnly
 from .models import DifyConfig
 from .serializers import DifyConfigSerializer
 import requests
@@ -11,7 +12,7 @@ class DifyConfigViewSet(viewsets.ModelViewSet):
     """Dify配置管理ViewSet"""
     queryset = DifyConfig.objects.all()
     serializer_class = DifyConfigSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsStaffOrReadOnly]
     
     def list(self, request):
         """获取激活的配置"""

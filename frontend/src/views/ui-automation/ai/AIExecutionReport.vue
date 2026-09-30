@@ -387,7 +387,7 @@ import { ref, watch, nextTick, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { Loading, VideoPlay, Download } from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
-import * as echarts from "echarts";
+import echarts from "@/utils/echarts";
 import {
   getAIExecutionReport,
   exportAIExecutionReportPDF,

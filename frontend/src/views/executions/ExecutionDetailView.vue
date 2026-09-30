@@ -261,7 +261,7 @@ import {
   Stamp,
   FolderOpened,
 } from "@element-plus/icons-vue";
-import axios from "axios";
+import api from "@/utils/api";
 
 const { t } = useI18n();
 
@@ -278,7 +278,7 @@ const tableRef = ref(null);
 const fetchTestPlan = async () => {
   try {
     const planId = route.params.id;
-    const response = await axios.get(`/api/executions/plans/${planId}/`);
+    const response = await api.get(`/executions/plans/${planId}/`);
     testPlan.value = response.data;
   } catch (error) {
     ElMessage.error(t("execution.fetchDetailFailed"));
@@ -287,13 +287,10 @@ const fetchTestPlan = async () => {
 
 const updateCaseStatus = async (runCase) => {
   try {
-    await axios.patch(
-      `/api/executions/run_cases/${runCase.id}/update_status/`,
-      {
-        status: runCase.status,
-        comments: runCase.comments || "",
-      },
-    );
+    await api.patch(`/executions/run_cases/${runCase.id}/update_status/`, {
+      status: runCase.status,
+      comments: runCase.comments || "",
+    });
     await fetchTestPlan(); // 刷新数据以更新进度和最后执行时间
     ElMessage.success(t("execution.statusUpdateSuccess"));
   } catch (error) {
@@ -303,13 +300,10 @@ const updateCaseStatus = async (runCase) => {
 
 const updateCaseDetails = async (runCase) => {
   try {
-    await axios.patch(
-      `/api/executions/run_cases/${runCase.id}/update_status/`,
-      {
-        status: runCase.status,
-        comments: runCase.comments || "",
-      },
-    );
+    await api.patch(`/executions/run_cases/${runCase.id}/update_status/`, {
+      status: runCase.status,
+      comments: runCase.comments || "",
+    });
     ElMessage.success(t("execution.detailsUpdateSuccess"));
   } catch (error) {
     ElMessage.error(t("execution.detailsUpdateFailed"));
@@ -318,8 +312,8 @@ const updateCaseDetails = async (runCase) => {
 
 const viewCaseHistory = async (runCase) => {
   try {
-    const response = await axios.get(
-      `/api/executions/run_cases/${runCase.id}/history/`,
+    const response = await api.get(
+      `/executions/run_cases/${runCase.id}/history/`,
     );
     currentCaseHistory.value = response.data;
     historyDialogVisible.value = true;
@@ -359,7 +353,7 @@ const batchDeleteCases = async () => {
 
     for (const runCase of selectedCases.value) {
       try {
-        await axios.delete(`/api/executions/run_cases/${runCase.id}/`);
+        await api.delete(`/executions/run_cases/${runCase.id}/`);
         successCount++;
       } catch (error) {
         console.error(`删除用例 ${runCase.id} 失败:`, error);

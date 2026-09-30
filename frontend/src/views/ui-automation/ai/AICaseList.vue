@@ -42,26 +42,28 @@
           prop="created_at"
           :label="$t('uiAutomation.common.createTime')"
           width="180"
-          :formatter="formatDate"
+          :formatter="localeDateTimeFormatter"
         />
         <el-table-column
           :label="$t('uiAutomation.common.operation')"
           width="200"
           fixed="right"
+          align="center"
         >
           <template #default="{ row }">
-            <el-button size="small" type="success" @click="runCase(row)">
-              <el-icon><VideoPlay /></el-icon>
-              {{ $t("uiAutomation.common.run") }}
-            </el-button>
-            <el-button size="small" type="primary" @click="editCase(row)">
-              <el-icon><Edit /></el-icon>
-              {{ $t("uiAutomation.common.edit") }}
-            </el-button>
-            <el-button size="small" type="danger" @click="deleteCase(row.id)">
-              <el-icon><Delete /></el-icon>
-              {{ $t("uiAutomation.common.delete") }}
-            </el-button>
+            <div class="action-col">
+              <el-button link type="primary" size="small" @click="runCase(row)">
+                {{ $t("uiAutomation.common.run") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="primary" size="small" @click="editCase(row)">
+                {{ $t("uiAutomation.common.edit") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="danger" size="small" @click="deleteCase(row.id)">
+                {{ $t("uiAutomation.common.delete") }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -141,7 +143,7 @@
 import { ref, reactive, onMounted, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Search, VideoPlay, Edit, Delete } from "@element-plus/icons-vue";
+import { Search } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 import {
   getAICases,
@@ -149,6 +151,7 @@ import {
   deleteAICase,
   runAICase,
 } from "@/api/ui_automation";
+import { localeDateTimeFormatter } from "@/utils/format";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -294,10 +297,6 @@ const runCase = async (row) => {
   }
 };
 
-const formatDate = (row, column, cellValue) => {
-  if (!cellValue) return "";
-  return new Date(cellValue).toLocaleString();
-};
 
 onMounted(() => {
   loadCases();

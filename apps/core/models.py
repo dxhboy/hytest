@@ -52,24 +52,64 @@ class UnifiedNotificationConfig(models.Model):
     def __str__(self):
         return f"{self.name} - {self.get_config_type_display()}"
 
+    WEBHOOK_CONFIG_TYPES = ('webhook_wechat', 'webhook_feishu', 'webhook_dingtalk')
+
+    @classmethod
+    def select_for_notification_type(cls, notification_type, logger=None):
+        """根据通知类型选择通知配置
+
+        - webhook / both：优先选择第一个启用的 Webhook 配置，找不到则回退到默认配置
+        - 其他（邮件）：直接使用默认配置
+        默认配置 = is_default=True 且 is_active=True 的第一条记录；都没有时返回 None。
+        logger 可选，用于在 Webhook 配置缺失回退时记录警告。
+        """
+        notification_config = None
+        if notification_type in ['webhook', 'both']:
+            # 如果需要Webhook通知，优先选择Webhook配置
+            notification_config = cls.objects.filter(
+                config_type__in=list(cls.WEBHOOK_CONFIG_TYPES),
+                is_active=True
+            ).first()
+            if not notification_config and logger is not None:
+                logger.warning("没有找到可用的Webhook通知配置，使用默认邮件配置")
+
+        if not notification_config:
+            # 如果没有找到webhook配置或者是邮件通知，使用默认配置
+            notification_config = cls.objects.filter(is_default=True, is_active=True).first()
+        return notification_config
+
     def get_webhook_bots(self):
         """获取配置的所有webhook机器人"""
         bots = []
-        if self.webhook_bots:
-            for bot_type, bot_config in self.webhook_bots.items():
+        if not self.webhook_bots:
+            return bots
+        data = self.webhook_bots
+        if 'webhook_url' in data or 'host' in data:
+            bot_type = self.config_type.replace('webhook_', '') if self.config_type.startswith('webhook_') else self.config_type
+            bot_data = {
+                'type': bot_type,
+                'name': data.get('name', self.name or f'{bot_type}机器人'),
+                'webhook_url': data.get('webhook_url'),
+                'enabled': data.get('enabled', True),
+                'enable_ui_automation': data.get('enable_ui_automation', True),
+                'enable_api_testing': data.get('enable_api_testing', True),
+            }
+            if bot_type in ('feishu', 'dingtalk') and data.get('secret'):
+                bot_data['secret'] = data['secret']
+            bots.append(bot_data)
+        else:
+            for bot_type, bot_config in data.items():
+                if not isinstance(bot_config, dict):
+                    continue
                 bot_data = {
                     'type': bot_type,
                     'name': bot_config.get('name', f'{bot_type}机器人'),
                     'webhook_url': bot_config.get('webhook_url'),
                     'enabled': bot_config.get('enabled', True),
-                    # 业务类型勾选框
                     'enable_ui_automation': bot_config.get('enable_ui_automation', True),
-                    'enable_api_testing': bot_config.get('enable_api_testing', True)
+                    'enable_api_testing': bot_config.get('enable_api_testing', True),
                 }
-                # 钉钉机器人需要额外包含secret字段
-                if bot_type == 'feishu' and bot_config.get('secret'):
-                    bot_data['secret'] = bot_config.get('secret')
-                if bot_type == 'dingtalk' and bot_config.get('secret'):
-                    bot_data['secret'] = bot_config.get('secret')
+                if bot_type in ('feishu', 'dingtalk') and bot_config.get('secret'):
+                    bot_data['secret'] = bot_config['secret']
                 bots.append(bot_data)
         return bots

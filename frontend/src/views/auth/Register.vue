@@ -208,8 +208,14 @@ const handleRegister = async () => {
         ElMessage.success(t("auth.registerSuccess"));
         router.push("/login");
       } catch (error) {
+        // DRF 校验错误格式为 { field: ["msg"] } 或 { non_field_errors: ["msg"] }
+        const data = error.response?.data;
+        const firstFieldError =
+          data && typeof data === "object"
+            ? [].concat(Object.values(data)[0] ?? [])[0]
+            : null;
         ElMessage.error(
-          error.response?.data?.error || t("auth.registerFailed"),
+          data?.error || firstFieldError || t("auth.registerFailed"),
         );
       } finally {
         loading.value = false;

@@ -198,7 +198,7 @@ import {
   Warning,
   Download,
 } from "@element-plus/icons-vue";
-import * as echarts from "echarts";
+import echarts from "@/utils/echarts";
 import api from "@/utils/api";
 
 const { t } = useI18n();

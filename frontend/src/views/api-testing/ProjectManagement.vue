@@ -60,7 +60,7 @@
         width="180"
       >
         <template #default="scope">
-          {{ formatDate(scope.row.created_at) }}
+          {{ formatDateMinute(scope.row.created_at) }}
         </template>
       </el-table-column>
       <el-table-column :label="$t('apiTesting.common.visibility')" width="120">
@@ -297,10 +297,10 @@
           viewedProject?.end_date || $t("apiTesting.project.notSet")
         }}</el-descriptions-item>
         <el-descriptions-item :label="$t('apiTesting.project.createdAt')">{{
-          formatDate(viewedProject?.created_at)
+          formatDateMinute(viewedProject?.created_at)
         }}</el-descriptions-item>
         <el-descriptions-item :label="$t('apiTesting.project.updatedAt')">{{
-          formatDate(viewedProject?.updated_at)
+          formatDateMinute(viewedProject?.updated_at)
         }}</el-descriptions-item>
       </el-descriptions>
 
@@ -328,6 +328,7 @@ import { useI18n } from "vue-i18n";
 import { Plus } from "@element-plus/icons-vue";
 import api from "@/utils/api";
 import dayjs from "dayjs";
+import { formatDateMinute } from "@/utils/format";
 
 const { t } = useI18n();
 const loading = ref(false);
@@ -404,9 +405,6 @@ const getStatusText = (status) => {
   return statusKey ? t(`apiTesting.project.status.${statusKey}`) : status;
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm");
-};
 
 const loadProjects = async () => {
   loading.value = true;

@@ -25,7 +25,7 @@
                 project.owner?.username
               }}</el-descriptions-item>
               <el-descriptions-item :label="$t('project.createdAt')">{{
-                formatDate(project.created_at)
+                formatDateMinute(project.created_at)
               }}</el-descriptions-item>
               <el-descriptions-item
                 :label="$t('project.projectDescription')"
@@ -55,7 +55,7 @@
               <el-table-column prop="role" :label="$t('project.role')" />
               <el-table-column prop="joined_at" :label="$t('project.joinedAt')">
                 <template #default="{ row }">
-                  {{ formatDate(row.joined_at) }}
+                  {{ formatDateMinute(row.joined_at) }}
                 </template>
               </el-table-column>
               <el-table-column :label="$t('project.actions')" width="100">
@@ -115,7 +115,7 @@ import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import api from "@/utils/api";
-import dayjs from "dayjs";
+import { formatDateMinute } from "@/utils/format";
 
 const route = useRoute();
 const { t } = useI18n();
@@ -153,9 +153,6 @@ const getStatusText = (status) => {
   return textMap[status] || status;
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm");
-};
 
 const removeMember = async (member) => {
   try {

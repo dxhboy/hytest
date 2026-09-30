@@ -1,0 +1,30 @@
+{
+  "testhub_url": "http://A机器的IP或域名:8000",
+  "token": "在 Django Admin -> AUTH TOKEN -> Tokens 里为某个用户创建的 Token（不是登录密码）",
+  "project_id": 1,
+  "advertise_host": "本机（机器B）在局域网里真实可达的IP，不要填 Docker/WSL 的虚拟网卡地址",
+  "heartbeat_interval_seconds": 30,
+
+  "playwright": {
+    "enabled": true,
+    "browser": "chromium",
+    "port": 19222,
+    "relay_port": 9222,
+    "control_port": 9333,
+    "default_headless": false,
+    "max_lifetime_seconds": 1800,
+    "queue_wait_timeout": 600,
+    "service_name": "",
+    "auto_install": true,
+    "download_host": ""
+  },
+
+  "selenium": {
+    "enabled": false,
+    "jar_path": "lib/selenium-server-4.46.0.jar",
+    "port": 4444,
+    "java_path": "java",
+    "path_suffix": "/wd/hub",
+    "service_name": ""
+  }
+}

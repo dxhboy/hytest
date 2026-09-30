@@ -65,7 +65,7 @@
           prop="start_time"
           :label="$t('uiAutomation.ai.executionRecords.startTime')"
           width="180"
-          :formatter="formatDate"
+          :formatter="localeDateTimeFormatter"
         />
         <el-table-column
           prop="executed_by.username"
@@ -74,16 +74,20 @@
         />
         <el-table-column
           :label="$t('uiAutomation.common.operation')"
-          width="200"
+          width="160"
           fixed="right"
+          align="center"
         >
           <template #default="{ row }">
-            <el-button size="small" @click="viewDetail(row)">
-              {{ $t("uiAutomation.ai.executionRecords.viewDetail") }}
-            </el-button>
-            <el-button size="small" type="success" @click="viewReport(row)">
-              {{ $t("uiAutomation.ai.executionRecords.viewReport") }}
-            </el-button>
+            <div class="action-col">
+              <el-button link type="primary" size="small" @click="viewDetail(row)">
+                {{ $t("uiAutomation.ai.executionRecords.viewDetail") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="primary" size="small" @click="viewReport(row)">
+                {{ $t("uiAutomation.ai.executionRecords.viewReport") }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -127,7 +131,7 @@
           <span class="label"
             >{{ $t("uiAutomation.ai.executionRecords.startTime") }}:</span
           >
-          <span>{{ formatDate(null, null, currentRecord.start_time) }}</span>
+          <span>{{ localeDateTimeFormatter(null, null, currentRecord.start_time) }}</span>
         </div>
         <div class="detail-item">
           <span class="label"
@@ -195,6 +199,7 @@ import {
   batchDeleteAIExecutionRecords,
 } from "@/api/ui_automation";
 import AIExecutionReport from "./AIExecutionReport.vue";
+import { localeDateTimeFormatter } from "@/utils/format";
 
 const { t } = useI18n();
 const records = ref([]);
@@ -288,10 +293,6 @@ const getStatusText = (status) => {
   return map[status] || status;
 };
 
-const formatDate = (row, column, cellValue) => {
-  if (!cellValue) return "";
-  return new Date(cellValue).toLocaleString();
-};
 
 // 获取序号
 const getSerialNumber = (index) => {

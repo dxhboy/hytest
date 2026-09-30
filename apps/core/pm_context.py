@@ -1,5 +1,55 @@
 # apps/core/pm_context.py
+import ast
+import builtins as _builtins
 import json as _json
+
+# 脚本可 import 的模块：满足签名、时间戳、编码等常见前后置需求，不含文件/进程/网络能力
+ALLOWED_MODULES = frozenset({
+    'base64', 'binascii', 'datetime', 'decimal', 'hashlib', 'hmac', 'json', 'math',
+    'random', 're', 'string', 'time', 'urllib.parse', 'uuid', 'collections', 'itertools',
+    'functools', 'copy',
+})
+
+_SAFE_BUILTIN_NAMES = (
+    'abs', 'all', 'any', 'ascii', 'bin', 'bool', 'bytearray', 'bytes', 'callable', 'chr',
+    'complex', 'dict', 'divmod', 'enumerate', 'filter', 'float', 'format', 'frozenset',
+    'hasattr', 'hash', 'hex', 'int', 'isinstance', 'issubclass', 'iter', 'len', 'list', 'map',
+    'max', 'min', 'next', 'object', 'oct', 'ord', 'pow', 'range', 'repr', 'reversed', 'round',
+    'set', 'slice', 'sorted', 'str', 'sum', 'tuple', 'zip',
+    'Exception', 'ValueError', 'TypeError', 'KeyError', 'IndexError', 'AttributeError',
+    'ZeroDivisionError', 'RuntimeError', 'StopIteration',
+)
+
+
+def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if level != 0 or name not in ALLOWED_MODULES:
+        raise ImportError(f"脚本中不允许导入模块 '{name}'，可用模块: {', '.join(sorted(ALLOWED_MODULES))}")
+    return __import__(name, globals, locals, fromlist, level)
+
+
+def _safe_getattr(obj, name, *default):
+    if isinstance(name, str) and name.startswith('_'):
+        raise AttributeError(f"脚本中不允许访问私有属性 '{name}'")
+    return getattr(obj, name, *default)
+
+
+def _build_safe_builtins():
+    safe = {name: getattr(_builtins, name) for name in _SAFE_BUILTIN_NAMES}
+    safe['__import__'] = _safe_import
+    safe['__build_class__'] = _builtins.__build_class__  # 允许脚本内定义 class
+    safe['getattr'] = _safe_getattr
+    return safe
+
+
+def _validate_script(tree):
+    """禁止访问下划线开头的属性/名称，堵住 ().__class__.__subclasses__() 之类的逃逸路径"""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and node.attr.startswith('_'):
+            raise ValueError(f"第 {node.lineno} 行：不允许访问私有属性 '{node.attr}'")
+        if isinstance(node, ast.Name) and node.id.startswith('__'):
+            raise ValueError(f"第 {node.lineno} 行：不允许使用名称 '{node.id}'")
+        if isinstance(node, (ast.Import, ast.ImportFrom)) and getattr(node, 'level', 0):
+            raise ValueError(f"第 {node.lineno} 行：不允许相对导入")
 
 
 class _EnvironmentProxy:
@@ -75,7 +125,8 @@ class PmObject:
 def execute_pm_script(script: str, variables: dict, response=None) -> dict:
     """执行 Python 脚本，注入 pm 对象。
 
-    注意：脚本以完整 Python 权限执行（含 __builtins__），仅限受信任的测试工程师使用。
+    脚本在受限环境中执行：只提供安全的内置函数、只能导入 ALLOWED_MODULES 中的模块、
+    禁止访问下划线开头的属性。这是纵深防御而非完整沙箱，脚本编辑权限仍应只给可信用户。
 
     Returns:
         {
@@ -97,11 +148,14 @@ def execute_pm_script(script: str, variables: dict, response=None) -> dict:
         'pm': pm,
         'print': _print,
         'json': _json,
-        '__builtins__': __builtins__,
+        '__name__': '__pm_script__',
+        '__builtins__': _build_safe_builtins(),
     }
 
     try:
-        exec(compile(script, '<pm_script>', 'exec'), exec_context)
+        tree = ast.parse(script, '<pm_script>', 'exec')
+        _validate_script(tree)
+        exec(compile(tree, '<pm_script>', 'exec'), exec_context)
     except Exception as e:
         errors.append(str(e))
 

@@ -7,19 +7,8 @@ from django.utils.decorators import method_decorator
 from .models import User, UserProfile
 from .serializers import UserSerializer, UserCreateSerializer, LoginSerializer, UserProfileSerializer
 
-# JWT 相关导入
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-@api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
-def get_current_user(request):
-    serializer = UserSerializer(request.user)
-    return Response(serializer.data)
-
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from django.contrib.auth import login, logout
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])

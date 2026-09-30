@@ -47,7 +47,7 @@
           testcase.author?.username
         }}</el-descriptions-item>
         <el-descriptions-item :label="$t('testcase.createdAt')" :span="2">{{
-          formatDate(testcase.created_at)
+          formatDateMinute(testcase.created_at)
         }}</el-descriptions-item>
         <el-descriptions-item
           :label="$t('testcase.caseDescription')"
@@ -79,7 +79,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import api from "@/utils/api";
-import dayjs from "dayjs";
+import { formatDateMinute } from "@/utils/format";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -121,9 +121,6 @@ const getTypeText = (type) => {
   return textMap[type] || "-";
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm");
-};
 
 onMounted(() => {
   fetchTestCase();

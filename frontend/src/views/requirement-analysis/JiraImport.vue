@@ -49,19 +49,19 @@
       <el-card style="margin-bottom: 16px">
         <template #header>{{ $t('requirementAnalysis.jira.selectFields') }}</template>
         <el-checkbox-group v-model="selectedFields">
-          <el-checkbox value="summary" disabled>Summary（必选）</el-checkbox>
+          <el-checkbox value="summary" disabled>{{ $t('requirementAnalysis.jira.fieldSummaryRequired') }}</el-checkbox>
           <el-checkbox value="description">Description</el-checkbox>
           <el-checkbox value="acceptance_criteria">Acceptance Criteria</el-checkbox>
-          <el-checkbox value="subtasks">子任务列表</el-checkbox>
-          <el-checkbox value="priority">优先级</el-checkbox>
-          <el-checkbox value="labels">标签</el-checkbox>
+          <el-checkbox value="subtasks">{{ $t('requirementAnalysis.jira.fieldSubtasks') }}</el-checkbox>
+          <el-checkbox value="priority">{{ $t('requirementAnalysis.jira.fieldPriority') }}</el-checkbox>
+          <el-checkbox value="labels">{{ $t('requirementAnalysis.jira.fieldLabels') }}</el-checkbox>
         </el-checkbox-group>
       </el-card>
 
       <el-card style="margin-bottom: 16px">
         <template #header>{{ $t('requirementAnalysis.jira.previewResults') }}</template>
         <div v-for="(item, idx) in previewResults" :key="idx" style="margin-bottom: 12px">
-          <el-alert v-if="!item.success" :title="item.error || '拉取失败'" type="error" show-icon />
+          <el-alert v-if="!item.success" :title="item.error || $t('requirementAnalysis.jira.fetchFailed')" type="error" show-icon />
           <el-card v-else shadow="never" style="background: #f8f9fa">
             <div style="font-weight: bold">{{ item.issue_key }}: {{ item.summary }}</div>
             <div style="color: #606266; font-size: 13px; margin-top: 4px; white-space: pre-wrap">
@@ -71,8 +71,8 @@
         </div>
       </el-card>
 
-      <el-button @click="currentStep = 0">返回</el-button>
-      <el-button type="primary" @click="currentStep = 2">下一步</el-button>
+      <el-button @click="currentStep = 0">{{ $t('common.back') }}</el-button>
+      <el-button type="primary" @click="currentStep = 2">{{ $t('common.next') }}</el-button>
     </div>
 
     <!-- Step 3: 生成 -->
@@ -95,7 +95,7 @@
         </el-form>
       </el-card>
 
-      <el-button @click="currentStep = 1">返回</el-button>
+      <el-button @click="currentStep = 1">{{ $t('common.back') }}</el-button>
       <el-button type="primary" @click="startImport" :loading="importing">
         {{ $t('requirementAnalysis.jira.startGenerate') }}
       </el-button>

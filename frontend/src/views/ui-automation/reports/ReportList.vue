@@ -113,33 +113,25 @@
           width="180"
         >
           <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
+            {{ formatLocaleDateTime(row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column
           :label="$t('uiAutomation.common.operation')"
-          width="200"
+          width="160"
           fixed="right"
+          align="center"
         >
           <template #default="{ row }">
-            <el-button
-              link
-              type="primary"
-              size="small"
-              @click="viewReportDetail(row)"
-            >
-              <el-icon><Document /></el-icon>
-              {{ $t("uiAutomation.report.viewDetail") }}
-            </el-button>
-            <el-button
-              link
-              type="danger"
-              size="small"
-              @click="deleteReport(row)"
-            >
-              <el-icon><Delete /></el-icon>
-              {{ $t("uiAutomation.common.delete") }}
-            </el-button>
+            <div class="action-col">
+              <el-button link type="primary" size="small" @click="viewReportDetail(row)">
+                {{ $t("uiAutomation.report.viewDetail") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="danger" size="small" @click="deleteReport(row)">
+                {{ $t("uiAutomation.common.delete") }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -200,10 +192,10 @@
             formatDuration(currentReport.duration)
           }}</el-descriptions-item>
           <el-descriptions-item :label="$t('uiAutomation.report.startTime')">{{
-            formatDate(currentReport.started_at)
+            formatLocaleDateTime(currentReport.started_at)
           }}</el-descriptions-item>
           <el-descriptions-item :label="$t('uiAutomation.report.endTime')">{{
-            formatDate(currentReport.finished_at)
+            formatLocaleDateTime(currentReport.finished_at)
           }}</el-descriptions-item>
         </el-descriptions>
 
@@ -473,8 +465,6 @@ import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Refresh,
-  Document,
-  Delete,
   WarningFilled,
 } from "@element-plus/icons-vue";
 import {
@@ -482,6 +472,7 @@ import {
   getTestExecutions,
   deleteTestExecution,
 } from "@/api/ui_automation";
+import { formatLocaleDateTime } from "@/utils/format";
 
 const { t } = useI18n();
 
@@ -677,10 +668,6 @@ const getProgressColor = (percentage) => {
   return "#f56c6c";
 };
 
-const formatDate = (dateString) => {
-  if (!dateString) return "-";
-  return new Date(dateString).toLocaleString();
-};
 
 const formatDuration = (seconds) => {
   if (!seconds) return `0${t("uiAutomation.report.seconds")}`;

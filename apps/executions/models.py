@@ -53,24 +53,62 @@ class TestRun(models.Model):
         verbose_name_plural = '测试执行'
         ordering = ['-created_at']
     
-    @property
-    def progress_stats(self):
-        """执行进度统计"""
-        total = self.run_cases.count()
+    # 执行进度统计涉及的用例状态
+    STAT_STATUSES = ('untested', 'passed', 'failed', 'blocked', 'retest')
+
+    @classmethod
+    def stats_annotations(cls, prefix='run_cases'):
+        """返回用于 annotate/aggregate 的统计表达式，一条 SQL 即可得到全部状态计数。
+
+        viewset 在列表查询上 annotate 这些字段后，progress_stats 直接读取，避免 N+1。
+        """
+        from django.db.models import Count, Q
+        annotations = {'_stat_total': Count(prefix, distinct=True)}
+        for s in cls.STAT_STATUSES:
+            annotations[f'_stat_{s}'] = Count(
+                prefix, filter=Q(**{f'{prefix}__status': s}), distinct=True
+            )
+        return annotations
+
+    @classmethod
+    def with_progress_stats(cls, queryset):
+        """为 TestRun 查询集附加进度统计注解
+
+        注意：带聚合的查询不会再应用 Meta.ordering，调用方需要时请显式 order_by。
+        """
+        return queryset.annotate(**cls.stats_annotations())
+
+    @staticmethod
+    def build_progress_stats(counts):
+        """根据状态计数字典（total/untested/passed/...）构造进度统计结果"""
+        total = counts.get('total') or 0
         if total == 0:
             return {'total': 0, 'untested': 0, 'passed': 0, 'failed': 0, 'blocked': 0, 'retest': 0, 'progress': 0}
-        
-        stats = {
-            'total': total,
-            'untested': self.run_cases.filter(status='untested').count(),
-            'passed': self.run_cases.filter(status='passed').count(),
-            'failed': self.run_cases.filter(status='failed').count(),
-            'blocked': self.run_cases.filter(status='blocked').count(),
-            'retest': self.run_cases.filter(status='retest').count(),
-        }
+
+        stats = {'total': total}
+        for s in TestRun.STAT_STATUSES:
+            stats[s] = counts.get(s) or 0
         stats['tested'] = stats['passed'] + stats['failed'] + stats['blocked'] + stats['retest']
         stats['progress'] = round((stats['tested'] / total) * 100, 1) if total > 0 else 0
         return stats
+
+    @property
+    def progress_stats(self):
+        """执行进度统计
+
+        优先使用查询集上的注解（见 with_progress_stats），否则用一条聚合 SQL 计算。
+        """
+        if hasattr(self, '_stat_total'):
+            counts = {'total': self._stat_total}
+            for s in self.STAT_STATUSES:
+                counts[s] = getattr(self, f'_stat_{s}', 0)
+        else:
+            from django.db.models import Count, Q
+            agg = {'total': Count('id')}
+            for s in self.STAT_STATUSES:
+                agg[s] = Count('id', filter=Q(status=s))
+            counts = self.run_cases.aggregate(**agg)
+        return self.build_progress_stats(counts)
 
 class TestRunCase(models.Model):
     """测试执行用例"""

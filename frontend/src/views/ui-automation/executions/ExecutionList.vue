@@ -220,33 +220,26 @@
         </el-table-column>
         <el-table-column
           :label="$t('uiAutomation.common.operation')"
-          width="150"
+          width="200"
           fixed="right"
           align="center"
         >
           <template #default="{ row }">
-            <el-button
-              size="small"
-              type="primary"
-              link
-              @click="viewExecutionDetail(row)"
-            >
-              <el-icon><View /></el-icon>
-              {{ $t("uiAutomation.common.details") }}
-            </el-button>
-            <el-button
-              v-if="row.status === 'failed' || row.status === 'error'"
-              size="small"
-              type="warning"
-              link
-              @click="showRerunDialog(row)"
-            >
-              <el-icon><Refresh /></el-icon>
-              {{ $t("uiAutomation.common.rerun") }}
-            </el-button>
-            <el-button link type="danger" @click="handleDelete(row)">
-              {{ $t("uiAutomation.common.delete") }}
-            </el-button>
+            <div class="action-col">
+              <el-button link type="primary" size="small" @click="viewExecutionDetail(row)">
+                {{ $t("uiAutomation.common.details") }}
+              </el-button>
+              <template v-if="row.status === 'failed' || row.status === 'error'">
+                <span class="action-divider" />
+                <el-button link type="warning" size="small" @click="showRerunDialog(row)">
+                  {{ $t("uiAutomation.common.rerun") }}
+                </el-button>
+              </template>
+              <span class="action-divider" />
+              <el-button link type="danger" size="small" @click="handleDelete(row)">
+                {{ $t("uiAutomation.common.delete") }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -505,7 +498,7 @@
             <el-option
               v-for="svc in remoteServices"
               :key="svc.id"
-              :label="`${svc.name} (${svc.service_type_display})`"
+              :label="svc.name"
               :value="svc.id"
             />
           </el-select>
@@ -526,7 +519,7 @@
 <script setup>
 import { ref, reactive, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Search, View, WarningFilled, Refresh } from "@element-plus/icons-vue";
+import { Search, WarningFilled } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 import {
   getTestCaseExecutions,
@@ -870,8 +863,15 @@ async function fetchRemoteServices() {
     const res = await getRemoteBrowserServices({
       project: projectId.value,
       is_active: true,
+      online: true,
     });
-    remoteServices.value = res.data?.results || res.data || [];
+    const list = res.data?.results || res.data || [];
+    // 前端再兜底过滤一次，不管后端筛选是否生效，都不展示已停用/已离线的服务。
+    // is_online 是后端新加的字段，用 !== false（而不是 === true）兼容后端还没
+    // 部署这次改动的情况，不会把老数据全部误判成离线
+    remoteServices.value = list.filter(
+      (s) => s.is_active !== false && s.is_online !== false,
+    );
   } catch (e) {
     console.error("Failed to fetch remote services:", e);
   }

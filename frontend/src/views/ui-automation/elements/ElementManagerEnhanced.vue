@@ -18,6 +18,16 @@
           </el-select>
           <div class="header-actions">
             <el-button
+              v-if="checkedElementIds.length > 0"
+              type="danger"
+              size="small"
+              @click="batchDeleteElements"
+              :title="$t('uiAutomation.common.batchDelete') || '批量删除'"
+            >
+              <el-icon><Delete /></el-icon>
+              <span>({{ checkedElementIds.length }})</span>
+            </el-button>
+            <el-button
               type="primary"
               size="small"
               @click="showCreatePageDialog = true"
@@ -43,15 +53,16 @@
             :data="treeData"
             :props="treeProps"
             node-key="id"
+            show-checkbox
             :expand-on-click-node="false"
             :default-expanded-keys="expandedKeys"
-            @node-click="onNodeClick"
+            @check="onTreeCheck"
             @node-contextmenu="onNodeRightClick"
             @node-expand="onNodeExpand"
             @node-collapse="onNodeCollapse"
           >
             <template #default="{ node, data }">
-              <div class="tree-node">
+              <div class="tree-node" @click.stop="onNodeClick(data)">
                 <el-icon v-if="data.type === 'page'">
                   <Folder />
                 </el-icon>
@@ -218,11 +229,9 @@
                   >
                     <el-select
                       v-model="selectedElement.locator_strategy_id"
-                      :key="`strategy-${formKey}-${selectedElement.locator_strategy_id || 'null'}`"
                       :placeholder="
                         $t('uiAutomation.element.rules.strategyRequired')
                       "
-                      value-key="id"
                     >
                       <el-option
                         v-for="strategy in locatorStrategies"
@@ -294,7 +303,8 @@
                   - {{ $t("uiAutomation.element.locatorTip.id") }}<br />
                   - {{ $t("uiAutomation.element.locatorTip.css") }}<br />
                   - {{ $t("uiAutomation.element.locatorTip.xpath") }}<br />
-                  - {{ $t("uiAutomation.element.locatorTip.other") }}
+                  - {{ $t("uiAutomation.element.locatorTip.other") }}<br />
+                  - {{ $t("uiAutomation.element.locatorTip.param") }}
                 </div>
               </el-form-item>
 
@@ -379,13 +389,13 @@
       <li @click="addContextElement">
         {{ $t("uiAutomation.element.contextMenu.addElement") }}
       </li>
-      <li @click="addSubPage">
+      <li v-if="rightClickedNode?.id !== '__ungrouped__'" @click="addSubPage">
         {{ $t("uiAutomation.element.contextMenu.addSubPage") }}
       </li>
-      <li @click="editNode">
+      <li v-if="rightClickedNode?.id !== '__ungrouped__'" @click="editNode">
         {{ $t("uiAutomation.element.contextMenu.edit") }}
       </li>
-      <li @click="deleteNode">
+      <li v-if="rightClickedNode?.id !== '__ungrouped__'" @click="deleteNode">
         {{ $t("uiAutomation.element.contextMenu.delete") }}
       </li>
     </ul>
@@ -449,7 +459,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch, nextTick } from "vue";
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -472,6 +482,7 @@ import {
   getElementDetail,
   updateElement,
   deleteElement,
+  batchDeleteElements as batchDeleteElementsApi,
   getElementTree,
   getElementGroupTree,
   getElementGroups,
@@ -496,6 +507,16 @@ const selectedElement = ref(null);
 const expandedKeys = ref([]);
 const treeKey = ref(0); // 用于强制重新渲染树组件
 const formKey = ref(0); // 用于强制重新渲染表单组件
+const checkedElementIds = ref([]);
+const lastCheckedElementId = ref(null);
+const isShiftPressed = ref(false);
+
+const onKeyDown = (e) => {
+  if (e.key === "Shift") isShiftPressed.value = true;
+};
+const onKeyUp = (e) => {
+  if (e.key === "Shift") isShiftPressed.value = false;
+};
 
 // 表单引用
 const treeRef = ref(null);
@@ -666,7 +687,15 @@ onMounted(async () => {
   // 暴露调试信息
   exposeToWindow();
 
+  document.addEventListener("keydown", onKeyDown);
+  document.addEventListener("keyup", onKeyUp);
+
   console.log("=== 组件挂载完成 ===");
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onKeyDown);
+  document.removeEventListener("keyup", onKeyUp);
 });
 
 // 加载项目列表
@@ -847,6 +876,30 @@ const loadElementTree = async () => {
     };
 
     attachElementsToPages(pageNodes);
+
+    // 收集未分组的元素（group_id 为 null 的）
+    const groupedIds = new Set();
+    const collectGroupedIds = (pages) => {
+      pages.forEach((page) => {
+        const pageElements = elements.filter((el) => el.group_id === page.id);
+        pageElements.forEach((el) => groupedIds.add(el.id));
+        if (page.children) {
+          collectGroupedIds(page.children.filter((c) => c.type === "page"));
+        }
+      });
+    };
+    collectGroupedIds(pageNodes);
+
+    const ungroupedElements = elements.filter((el) => !groupedIds.has(el.id));
+    if (ungroupedElements.length > 0) {
+      pageNodes.push({
+        id: "__ungrouped__",
+        name: t("uiAutomation.element.ungrouped"),
+        type: "page",
+        children: ungroupedElements.map((el) => ({ ...el, type: "element" })),
+      });
+    }
+
     console.log("最终treeData:", pageNodes);
     treeData.value = pageNodes;
 
@@ -1014,9 +1067,57 @@ const onNodeCollapse = (data) => {
   }
 };
 
+// 保存前校验必填字段（避免带着无效数据发请求，后端会因 name/locator_strategy/locator_value
+// 为必填字段而返回 400，但错误提示只会显示笼统的 "Request failed with status code 400"）
+const validateElementFields = () => {
+  const errors = [];
+
+  if (!selectedElement.value.name || !selectedElement.value.name.trim()) {
+    errors.push(t("uiAutomation.element.rules.nameRequired"));
+  }
+  if (!selectedElement.value.locator_strategy_id) {
+    errors.push(t("uiAutomation.element.rules.strategyRequired"));
+  }
+  if (
+    !selectedElement.value.locator_value ||
+    !selectedElement.value.locator_value.trim()
+  ) {
+    errors.push(t("uiAutomation.element.rules.locatorRequired"));
+  }
+
+  return errors;
+};
+
+// 解析后端返回的错误信息（DRF 校验失败时返回的是 { field: [msg, ...] } 结构，
+// 而不是 { message: ... }，之前的代码取不到具体原因，只能显示状态码文案）
+const extractErrorMessage = (error) => {
+  const data = error.response?.data;
+
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const fieldErrors = Object.entries(data)
+      .filter(([key]) => key !== "message" && key !== "detail")
+      .map(([key, value]) => {
+        const msg = Array.isArray(value) ? value.join(",") : value;
+        return `${key}: ${msg}`;
+      });
+
+    if (fieldErrors.length > 0) return fieldErrors.join("; ");
+    if (data.message) return data.message;
+    if (data.detail) return data.detail;
+  }
+
+  return error.message || t("uiAutomation.messages.error.unknown");
+};
+
 // 保存元素
 const saveElement = async () => {
   if (!selectedElement.value) return;
+
+  const validationErrors = validateElementFields();
+  if (validationErrors.length > 0) {
+    ElMessage.warning(validationErrors.join("; "));
+    return;
+  }
 
   try {
     saving.value = true;
@@ -1228,9 +1329,7 @@ const saveElement = async () => {
     ElMessage.error(
       t("uiAutomation.element.messages.saveFailed") +
         ": " +
-        (error.response?.data?.message ||
-          error.message ||
-          t("uiAutomation.messages.error.unknown")),
+        extractErrorMessage(error),
     );
   } finally {
     saving.value = false;
@@ -1418,6 +1517,91 @@ const deleteNode = async () => {
     if (error !== "cancel") {
       console.error("删除失败:", error);
       ElMessage.error(t("uiAutomation.element.messages.deleteFailed"));
+    }
+  }
+};
+
+// 扁平化树，获取所有元素节点的有序列表
+const getFlatElementNodes = () => {
+  const result = [];
+  const traverse = (nodes) => {
+    for (const node of nodes) {
+      if (node.type === "element") result.push(node);
+      if (node.children) traverse(node.children);
+    }
+  };
+  traverse(treeData.value);
+  return result;
+};
+
+// 树节点勾选
+const onTreeCheck = (data) => {
+  if (isShiftPressed.value && lastCheckedElementId.value && data.type === "element") {
+    const flatElements = getFlatElementNodes();
+    const lastIdx = flatElements.findIndex((n) => n.id === lastCheckedElementId.value);
+    const curIdx = flatElements.findIndex((n) => n.id === data.id);
+    if (lastIdx !== -1 && curIdx !== -1) {
+      const start = Math.min(lastIdx, curIdx);
+      const end = Math.max(lastIdx, curIdx);
+      for (let i = start; i <= end; i++) {
+        treeRef.value?.setChecked(flatElements[i].id, true, false);
+      }
+    }
+  }
+
+  if (data.type === "element") {
+    lastCheckedElementId.value = data.id;
+  }
+
+  const checkedNodes = treeRef.value?.getCheckedNodes() || [];
+  checkedElementIds.value = checkedNodes
+    .filter((node) => node.type === "element")
+    .map((node) => node.id);
+};
+
+// 批量删除元素
+const batchDeleteElements = async () => {
+  if (checkedElementIds.value.length === 0) {
+    ElMessage.warning(t("uiAutomation.element.messages.noElementSelected"));
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      t("uiAutomation.element.messages.batchDeleteConfirm", {
+        count: checkedElementIds.value.length,
+      }),
+      t("uiAutomation.element.messages.deleteConfirmTitle"),
+      {
+        type: "warning",
+        confirmButtonText: t("uiAutomation.common.confirm"),
+        cancelButtonText: t("uiAutomation.common.cancel"),
+      },
+    );
+
+    const response = await batchDeleteElementsApi(checkedElementIds.value);
+    const deletedCount =
+      response.data?.deleted_count || checkedElementIds.value.length;
+    ElMessage.success(
+      t("uiAutomation.element.messages.batchDeleteSuccess", {
+        count: deletedCount,
+      }),
+    );
+
+    if (
+      selectedElement.value &&
+      checkedElementIds.value.includes(selectedElement.value.id)
+    ) {
+      selectedElement.value = null;
+    }
+
+    checkedElementIds.value = [];
+    await Promise.all([loadPages(), loadElementTree()]);
+    treeKey.value += 1;
+  } catch (error) {
+    if (error !== "cancel") {
+      console.error("批量删除失败:", error);
+      ElMessage.error(t("uiAutomation.element.messages.batchDeleteFailed"));
     }
   }
 };

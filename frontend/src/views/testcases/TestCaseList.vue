@@ -171,7 +171,7 @@
             width="180"
           >
             <template #default="{ row }">
-              {{ formatDate(row.created_at) }}
+              {{ formatDateMinute(row.created_at) }}
             </template>
           </el-table-column>
           <el-table-column
@@ -216,8 +216,8 @@ import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Search, Download, Delete } from "@element-plus/icons-vue";
 import api from "@/utils/api";
-import dayjs from "dayjs";
 import * as XLSX from "xlsx";
+import { formatDateMinute } from "@/utils/format";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -399,9 +399,6 @@ const getTypeText = (type) => {
   return textMap[type] || "-";
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm");
-};
 
 const getVersionsTooltip = (versions) => {
   return versions
@@ -510,7 +507,7 @@ const exportToExcel = async () => {
         getPriorityText(testcase.priority),
         getTypeText(testcase.test_type),
         testcase.author?.username || "",
-        formatDate(testcase.created_at),
+        formatDateMinute(testcase.created_at),
       ]);
     });
 

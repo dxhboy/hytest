@@ -2,6 +2,10 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/utils/api";
 
+// access token 本地过期时间（毫秒）。后端 ACCESS_TOKEN_LIFETIME 为 60 分钟，
+// 前端保守按 30 分钟计算，提前触发刷新
+export const ACCESS_TOKEN_LIFETIME_MS = 30 * 60 * 1000;
+
 export const useUserStore = defineStore("user", () => {
   const user = ref(null);
   const accessToken = ref(localStorage.getItem("access_token") || "");
@@ -12,6 +16,9 @@ export const useUserStore = defineStore("user", () => {
 
   // token刷新定时器
   let refreshTimer = null;
+
+  // 认证初始化只执行一次，重复调用返回同一个 Promise
+  let initPromise = null;
 
   const isAuthenticated = computed(() => !!accessToken.value && !!user.value);
 
@@ -44,10 +51,8 @@ export const useUserStore = defineStore("user", () => {
           isTokenExpiringSoon.value &&
           accessToken.value
         ) {
-          console.log("自动刷新token...");
           try {
             await refreshAccessToken();
-            console.log("自动刷新token成功");
           } catch (error) {
             console.error("自动刷新token失败:", error);
             // 刷新失败会自动logout，不需要额外处理
@@ -75,8 +80,8 @@ export const useUserStore = defineStore("user", () => {
       refreshToken.value = response.data.refresh;
       user.value = response.data.user;
 
-      // 计算过期时间（当前时间 + 30分钟）
-      const expiresAt = Date.now() + 30 * 60 * 1000;
+      // 计算过期时间
+      const expiresAt = Date.now() + ACCESS_TOKEN_LIFETIME_MS;
       tokenExpiresAt.value = expiresAt;
 
       // 持久化存储
@@ -96,8 +101,7 @@ export const useUserStore = defineStore("user", () => {
 
   const register = async (userData) => {
     try {
-      // 临时使用测试接口
-      const response = await api.post("/auth/test-register/", userData);
+      const response = await api.post("/auth/register/", userData);
 
       // 注册成功后不自动登录，不保存token和用户信息
       // 让用户手动登录
@@ -105,6 +109,21 @@ export const useUserStore = defineStore("user", () => {
     } catch (error) {
       throw error;
     }
+  };
+
+  // 清除本地所有认证信息（内存 + localStorage），不调用后端接口
+  const clearAuth = () => {
+    stopAutoRefresh();
+    accessToken.value = "";
+    refreshToken.value = "";
+    user.value = null;
+    tokenExpiresAt.value = 0;
+    initPromise = null;
+
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("token_expires_at");
+    localStorage.removeItem("user");
   };
 
   // 添加一个标记防止logout过程中的循环调用
@@ -132,16 +151,7 @@ export const useUserStore = defineStore("user", () => {
         }
       }
     } finally {
-      // 清除所有认证信息
-      accessToken.value = "";
-      refreshToken.value = "";
-      user.value = null;
-      tokenExpiresAt.value = 0;
-
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      localStorage.removeItem("token_expires_at");
-      localStorage.removeItem("user");
+      clearAuth();
 
       // 重置标记
       isLoggingOut = false;
@@ -159,7 +169,7 @@ export const useUserStore = defineStore("user", () => {
 
       // 更新access token和过期时间
       accessToken.value = response.data.access;
-      const expiresAt = Date.now() + 30 * 60 * 1000;
+      const expiresAt = Date.now() + ACCESS_TOKEN_LIFETIME_MS;
       tokenExpiresAt.value = expiresAt;
 
       // 如果返回了新的refresh token（启用了ROTATE_REFRESH_TOKENS）
@@ -181,17 +191,6 @@ export const useUserStore = defineStore("user", () => {
     }
   };
 
-  const fetchUser = async () => {
-    try {
-      const response = await api.get("/users/me/");
-      user.value = response.data;
-      localStorage.setItem("user", JSON.stringify(user.value));
-    } catch (error) {
-      await logout();
-      throw error;
-    }
-  };
-
   const fetchProfile = async () => {
     try {
       const response = await api.get("/auth/profile/");
@@ -206,14 +205,7 @@ export const useUserStore = defineStore("user", () => {
     }
   };
 
-  const initAuth = async () => {
-    console.log("initAuth 开始:", {
-      hasAccessToken: !!accessToken.value,
-      hasRefreshToken: !!refreshToken.value,
-      hasUser: !!user.value,
-      isExpired: isTokenExpired.value,
-    });
-
+  const doInitAuth = async () => {
     // 从localStorage恢复用户信息
     if (!user.value) {
       const savedUser = localStorage.getItem("user");
@@ -226,38 +218,37 @@ export const useUserStore = defineStore("user", () => {
       }
     }
 
-    if (accessToken.value) {
-      // 检查token是否过期
-      if (isTokenExpired.value && refreshToken.value) {
-        console.log("Token已过期，尝试刷新...");
-        try {
-          await refreshAccessToken();
-          console.log("Token刷新成功");
-        } catch (error) {
-          console.error("Token刷新失败:", error);
-          return;
-        }
-      }
+    if (!accessToken.value) return;
 
-      // 获取用户信息
-      if (!user.value) {
-        try {
-          console.log("获取用户信息...");
-          await fetchProfile();
-          console.log("用户信息获取成功:", user.value?.username);
-        } catch (error) {
-          console.error("获取用户信息失败:", error);
-          await logout();
-        }
-      } else {
-        console.log("用户信息已存在，跳过获取");
+    // 检查token是否过期
+    if (isTokenExpired.value && refreshToken.value) {
+      try {
+        await refreshAccessToken();
+      } catch (error) {
+        console.error("Token刷新失败:", error);
+        return;
       }
-
-      // 启动自动刷新定时器
-      startAutoRefresh();
-    } else {
-      console.log("没有access token，跳过认证初始化");
     }
+
+    // 获取用户信息
+    if (!user.value) {
+      try {
+        await fetchProfile();
+      } catch (error) {
+        console.error("获取用户信息失败:", error);
+        await logout();
+      }
+    }
+
+    // 启动自动刷新定时器
+    startAutoRefresh();
+  };
+
+  const initAuth = () => {
+    if (!initPromise) {
+      initPromise = doInitAuth();
+    }
+    return initPromise;
   };
 
   return {
@@ -274,6 +265,7 @@ export const useUserStore = defineStore("user", () => {
     refreshAccessToken,
     fetchProfile,
     initAuth,
+    clearAuth,
     startAutoRefresh,
     stopAutoRefresh,
   };

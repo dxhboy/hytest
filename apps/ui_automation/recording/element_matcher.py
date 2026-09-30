@@ -108,14 +108,16 @@ class ElementMatcher:
         matched = self._exact_match(page_path, locators)
         if matched:
             return {**base, 'status': 'reused', 'element_id': matched.id,
-                    'element_name': matched.name, 'changes': None}
+                    'element_name': matched.name, 'element_info': element_info,
+                    'changes': None}
 
         # 第2层：模糊匹配（标识性属性一致但定位器变了）
         matched = self._fuzzy_match(page_path, element_info, locators)
         if matched:
             changes = self._apply_update(matched, locators)
             return {**base, 'status': 'updated', 'element_id': matched.id,
-                    'element_name': matched.name, 'changes': changes}
+                    'element_name': matched.name, 'element_info': element_info,
+                    'changes': changes}
 
         # 第3层：无匹配 — 新增
         return {**base, 'status': 'created', 'element_id': None,

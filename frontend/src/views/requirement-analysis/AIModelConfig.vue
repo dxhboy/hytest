@@ -174,6 +174,9 @@
                 <option value="zhipu">
                   {{ $t("configuration.aiModel.modelTypes.zhipu") }}
                 </option>
+                <option value="anthropic_claude">
+                  {{ $t("configuration.aiModel.modelTypes.anthropic_claude") }}
+                </option>
                 <option value="bedrock_claude">
                   {{ $t("configuration.aiModel.modelTypes.bedrock_claude") }}
                 </option>
@@ -218,7 +221,9 @@
                 :placeholder="
                   isEditing
                     ? $t('configuration.aiModel.apiKeyPlaceholderEdit')
-                    : $t('configuration.aiModel.apiKeyPlaceholder')
+                    : configForm.model_type === 'anthropic_claude'
+                      ? 'sk-ant-api03-...'
+                      : $t('configuration.aiModel.apiKeyPlaceholder')
                 "
                 :required="!isEditing"
               />
@@ -237,17 +242,21 @@
             <div v-if="configForm.model_type !== 'bedrock_claude'" class="form-group">
               <label
                 >{{ $t("configuration.aiModel.baseUrl") }}
-                <span class="required">*</span></label
+                <span v-if="configForm.model_type !== 'anthropic_claude'" class="required">*</span></label
               >
               <input
                 v-model="configForm.base_url"
                 type="text"
                 class="form-input"
-                :placeholder="$t('configuration.aiModel.baseUrlPlaceholder')"
-                :required="configForm.model_type !== 'bedrock_claude'"
+                :placeholder="configForm.model_type === 'anthropic_claude'
+                  ? 'https://api.anthropic.com (optional)'
+                  : $t('configuration.aiModel.baseUrlPlaceholder')"
+                :required="configForm.model_type !== 'bedrock_claude' && configForm.model_type !== 'anthropic_claude'"
               />
               <small class="form-hint">
-                {{ $t("configuration.aiModel.baseUrlHint") }}
+                {{ configForm.model_type === 'anthropic_claude'
+                  ? 'Optional. Leave empty to use default Anthropic API endpoint.'
+                  : $t("configuration.aiModel.baseUrlHint") }}
               </small>
             </div>
 
@@ -260,7 +269,9 @@
                 v-model="configForm.model_name"
                 type="text"
                 class="form-input"
-                :placeholder="$t('configuration.aiModel.modelNamePlaceholder')"
+                :placeholder="configForm.model_type === 'anthropic_claude'
+                  ? 'claude-sonnet-4-20250514'
+                  : $t('configuration.aiModel.modelNamePlaceholder')"
                 :required="configForm.model_type !== 'bedrock_claude'"
               />
               <small class="form-hint">
@@ -454,6 +465,7 @@ export default {
         qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
         siliconflow: "https://api.siliconflow.cn/v1",
         zhipu: "https://open.bigmodel.cn/api/paas/v4",
+        anthropic_claude: "",
         other: "",
       },
       testResult: {
@@ -679,8 +691,10 @@ export default {
 
       // 验证必填字段
       const isBedrock = this.configForm.model_type === "bedrock_claude";
-      const requiredFields = isBedrock
-        ? [
+      const isAnthropic = this.configForm.model_type === "anthropic_claude";
+      let requiredFields;
+      if (isBedrock) {
+        requiredFields = [
             { name: "name", value: this.configForm.name },
             { name: "model_type", value: this.configForm.model_type },
             { name: "role", value: this.configForm.role },
@@ -694,8 +708,17 @@ export default {
             },
             { name: "aws_region", value: this.configForm.aws_region },
             { name: "aws_model_id", value: this.configForm.aws_model_id },
-          ]
-        : [
+          ];
+      } else if (isAnthropic) {
+        requiredFields = [
+            { name: "name", value: this.configForm.name },
+            { name: "model_type", value: this.configForm.model_type },
+            { name: "role", value: this.configForm.role },
+            { name: "api_key", value: this.isEditing ? "ok" : this.configForm.api_key },
+            { name: "model_name", value: this.configForm.model_name },
+          ];
+      } else {
+        requiredFields = [
             { name: "name", value: this.configForm.name },
             { name: "model_type", value: this.configForm.model_type },
             { name: "role", value: this.configForm.role },
@@ -703,6 +726,7 @@ export default {
             { name: "base_url", value: this.configForm.base_url },
             { name: "model_name", value: this.configForm.model_name },
           ];
+      }
 
       const emptyFields = requiredFields.filter(
         (field) => !field.value || field.value.trim() === "",
@@ -1046,6 +1070,11 @@ export default {
 .model-badge.siliconflow {
   background: #e0f7fa;
   color: #006064;
+}
+
+.model-badge.anthropic_claude {
+  background: #fce4ec;
+  color: #c62828;
 }
 
 .model-badge.other {

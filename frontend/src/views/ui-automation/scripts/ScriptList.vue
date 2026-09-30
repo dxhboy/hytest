@@ -81,31 +81,32 @@
         </el-table-column>
         <el-table-column
           :label="$t('uiAutomation.script.operationColumn')"
-          width="280"
+          width="200"
           fixed="right"
+          align="center"
         >
           <template #default="{ row }">
-            <el-button size="small" text @click="viewScript(row)">
-              <el-icon><View /></el-icon>
-              {{ $t("uiAutomation.script.viewDetail") }}
-            </el-button>
-            <el-button size="small" text @click="editScript(row)">
-              <el-icon><Edit /></el-icon>
-              {{ $t("uiAutomation.script.edit") }}
-            </el-button>
-            <el-button size="small" text @click="renameScript(row)">
-              <el-icon><EditPen /></el-icon>
-              {{ $t("uiAutomation.script.rename") }}
-            </el-button>
-            <el-button
-              size="small"
-              text
-              type="danger"
-              @click="deleteScript(row)"
-            >
-              <el-icon><Delete /></el-icon>
-              {{ $t("uiAutomation.script.delete") }}
-            </el-button>
+            <div class="action-col">
+              <el-button link type="primary" size="small" @click="viewScript(row)">
+                {{ $t("uiAutomation.script.viewDetail") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="primary" size="small" @click="editScript(row)">
+                {{ $t("uiAutomation.script.edit") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-dropdown @command="(cmd) => handleScriptCommand(cmd, row)">
+                <el-button link type="primary" size="small">
+                  {{ $t("uiAutomation.common.more") }}<el-icon><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="rename">{{ $t("uiAutomation.script.rename") }}</el-dropdown-item>
+                    <el-dropdown-item command="delete" style="color: var(--el-color-danger)">{{ $t("uiAutomation.script.delete") }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -255,7 +256,7 @@
 <script setup>
 import { ref, reactive, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, View, Edit, Delete, EditPen } from "@element-plus/icons-vue";
+import { Plus, ArrowDown } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 
@@ -446,6 +447,12 @@ const deleteScript = async (script) => {
       console.error("删除失败:", error);
     }
   }
+};
+
+// 更多操作下拉命令
+const handleScriptCommand = (command, row) => {
+  if (command === 'rename') renameScript(row);
+  else if (command === 'delete') deleteScript(row);
 };
 
 // 辅助方法

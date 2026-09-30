@@ -23,4 +23,13 @@ export default {
   warning: "Warning",
   previous: "Previous",
   next: "Next",
+  request: {
+    sessionExpired: "Session expired, please log in again",
+    serverError: "Server error, please try again later",
+  },
+  notFound: {
+    title: "Page Not Found",
+    description: "Sorry, the page you are looking for does not exist or has been removed",
+    backHome: "Back to Home",
+  },
 };

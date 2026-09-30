@@ -3,7 +3,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters
+from rest_framework.exceptions import NotFound, PermissionDenied
 from django.db import models
+from .access import accessible_projects, accessible_project_ids, can_manage_project
 from .models import Project, ProjectMember, ProjectEnvironment
 from .serializers import ProjectSerializer, ProjectCreateSerializer, ProjectMemberSerializer, ProjectEnvironmentSerializer
 
@@ -31,14 +33,22 @@ class ProjectListCreateView(generics.ListCreateAPIView):
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def get_all_projects(request):
-    """获取所有项目列表，用于下拉选择等场景"""
-    projects = Project.objects.all().values('id', 'name', 'description', 'status')
+    """获取当前用户可访问的项目列表，用于下拉选择等场景"""
+    projects = accessible_projects(request.user).values('id', 'name', 'description', 'status')
     return Response(list(projects))
 
 class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Project.objects.all()
     serializer_class = ProjectSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return accessible_projects(self.request.user)
+
+    def check_object_permissions(self, request, obj):
+        super().check_object_permissions(request, obj)
+        # 成员可查看；修改/删除仅限负责人或 owner/admin 角色
+        if request.method not in permissions.SAFE_METHODS and not can_manage_project(request.user, obj):
+            raise PermissionDenied('无权限修改该项目')
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
@@ -116,8 +126,15 @@ class ProjectEnvironmentListCreateView(generics.ListCreateAPIView):
     
     def get_queryset(self):
         project_id = self.kwargs['project_id']
-        return ProjectEnvironment.objects.filter(project_id=project_id)
-    
+        return ProjectEnvironment.objects.filter(
+            project_id=project_id, project_id__in=accessible_project_ids(self.request.user)
+        )
+
     def perform_create(self, serializer):
         project_id = self.kwargs['project_id']
-        serializer.save(project_id=project_id)
+        project = accessible_projects(self.request.user).filter(id=project_id).first()
+        if project is None:
+            raise NotFound('项目不存在')
+        if not can_manage_project(self.request.user, project):
+            raise PermissionDenied('无权限配置项目环境')
+        serializer.save(project=project)

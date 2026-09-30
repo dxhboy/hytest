@@ -125,7 +125,7 @@
         width="180"
       >
         <template #default="scope">
-          {{ formatDate(scope.row.created_at) }}
+          {{ formatLocaleDateTime(scope.row.created_at) }}
         </template>
       </el-table-column>
       <el-table-column
@@ -391,6 +391,7 @@ import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Delete } from "@element-plus/icons-vue";
 import api from "@/utils/api";
+import { formatLocaleDateTime } from "@/utils/format";
 
 const { t } = useI18n();
 
@@ -763,10 +764,6 @@ const handleCurrentChange = (val) => {
   fetchTestPlans();
 };
 
-const formatDate = (dateString) => {
-  if (!dateString) return "-";
-  return new Date(dateString).toLocaleString();
-};
 
 // 处理选择变化
 const handleSelectionChange = (selection) => {

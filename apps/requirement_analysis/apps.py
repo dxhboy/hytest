@@ -8,14 +8,5 @@ class RequirementAnalysisConfig(AppConfig):
 
     def ready(self):
         import apps.requirement_analysis.signals  # noqa: F401
-
-        import sys
-        # Don't start scheduler during test runs
-        if 'test' in sys.argv:
-            return
-        try:
-            from .scheduler import start_scheduler
-            start_scheduler()
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Failed to start scheduler: {e}")
+        # 定时生成任务由 Celery Beat 调度（见 settings.CELERY_BEAT_SCHEDULE），
+        # 不再在每个 Django 进程里各自启动 APScheduler，避免多进程重复触发

@@ -486,3 +486,71 @@ class RequirementAnalysisService:
                 continue
         
         return review_result
+
+
+def run_mock_analysis(document):
+    """
+    简化版同步分析：提取文档文本并写入模拟分析结果。
+    供 RequirementDocumentViewSet.analyze 与 upload_and_analyze 共用，返回 RequirementAnalysis 实例。
+    """
+    try:
+        # 简化版同步分析
+        # 提取文档文本
+        if not document.extracted_text:
+            document.extracted_text = DocumentProcessor.extract_text(document)
+            document.save()
+
+        # 创建模拟分析结果
+        analysis_result = {
+            'analysis_report': f'对文档"{document.title}"的需求分析已完成。\n\n文档内容：{document.extracted_text[:200]}...\n\n识别到若干功能性需求。',
+            'requirements_count': 2,
+            'requirements': [
+                {
+                    'requirement_id': 'REQ001',
+                    'requirement_name': '基础功能需求',
+                    'requirement_type': 'functional',
+                    'module': '核心模块',
+                    'requirement_level': 'high',
+                    'estimated_hours': 8,
+                    'description': '基于文档内容识别的功能需求',
+                    'acceptance_criteria': '功能正常运行，满足用户需求'
+                },
+                {
+                    'requirement_id': 'REQ002',
+                    'requirement_name': '用户交互需求',
+                    'requirement_type': 'usability',
+                    'module': '前端模块',
+                    'requirement_level': 'medium',
+                    'estimated_hours': 6,
+                    'description': '用户界面和交互相关需求',
+                    'acceptance_criteria': '界面友好，操作简单'
+                }
+            ]
+        }
+
+        # 创建分析记录
+        analysis = RequirementAnalysis.objects.create(
+            document=document,
+            analysis_report=analysis_result['analysis_report'],
+            requirements_count=analysis_result['requirements_count'],
+            analysis_time=2.5
+        )
+
+        # 保存需求数据
+        for req_data in analysis_result['requirements']:
+            BusinessRequirement.objects.create(
+                analysis=analysis,
+                **req_data
+            )
+
+        # 更新文档状态
+        document.status = 'analyzed'
+        document.save()
+
+        return analysis
+
+    except Exception as e:
+        logger.error(f"分析失败: {e}")
+        document.status = 'failed'
+        document.save()
+        raise e

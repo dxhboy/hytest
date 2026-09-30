@@ -79,7 +79,7 @@
           width="180"
         >
           <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
+            {{ formatDateMinute(row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column
@@ -169,7 +169,7 @@ import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import api from "@/utils/api";
-import dayjs from "dayjs";
+import { formatDateMinute } from "@/utils/format";
 
 const router = useRouter();
 const { t } = useI18n();
@@ -352,9 +352,6 @@ const getStatusText = (status) => {
   return textMap[status] || status;
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm");
-};
 
 onMounted(() => {
   fetchProjects();

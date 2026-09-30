@@ -912,6 +912,8 @@ export default {
       batchDeleteFailed: "Batch delete failed",
       formatFailed: "Failed to format",
       requestFailed: "Request failed",
+      executeSuite: "Failed to execute test suite",
+      suiteExecutionFailed: "Test suite execution failed: {error}",
     },
     warning: {
       pleaseConnect: "Please establish WebSocket connection first",
@@ -924,12 +926,16 @@ export default {
       pleaseCreateCollection: "Please create a collection first",
       websocketNotInSuite:
         "WebSocket projects do not support test suite functionality",
+      suiteExecutionTimeout:
+        "Timed out waiting for the result, please check the execution history later",
     },
     info: {
       websocketClosed: "WebSocket connection closed",
       websocketMessageReceived: "WebSocket message received",
       websocketConnectedTo: "Websocket connected to {url}",
       featureInDevelopment: "Feature is under development......",
+      suiteExecutionQueued:
+        "Test suite submitted for background execution, waiting for the result...",
     },
     confirm: {
       deleteTitle: "Confirm Delete",

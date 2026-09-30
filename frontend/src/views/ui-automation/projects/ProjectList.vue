@@ -101,30 +101,24 @@
         />
         <el-table-column
           :label="$t('uiAutomation.common.operation')"
-          width="180"
+          width="200"
           fixed="right"
+          align="center"
         >
           <template #default="{ row }">
-            <el-button
-              size="small"
-              type="primary"
-              @click="goToProjectDetail(row.id)"
-            >
-              <el-icon><View /></el-icon>
-              {{ $t("uiAutomation.common.view") }}
-            </el-button>
-            <el-button size="small" @click="editProject(row)">
-              <el-icon><Edit /></el-icon>
-              {{ $t("uiAutomation.common.edit") }}
-            </el-button>
-            <el-button
-              size="small"
-              type="danger"
-              @click="deleteProject(row.id)"
-            >
-              <el-icon><Delete /></el-icon>
-              {{ $t("uiAutomation.common.delete") }}
-            </el-button>
+            <div class="action-col">
+              <el-button link type="primary" size="small" @click="goToProjectDetail(row.id)">
+                {{ $t("uiAutomation.common.view") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="primary" size="small" @click="editProject(row)">
+                {{ $t("uiAutomation.common.edit") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="danger" size="small" @click="deleteProject(row.id)">
+                {{ $t("uiAutomation.common.delete") }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -293,7 +287,15 @@
           <el-input
             v-model="editForm.base_url"
             :placeholder="$t('uiAutomation.project.rules.baseUrlRequired')"
-          />
+          >
+            <template #append>
+              <el-button
+                :icon="Key"
+                :title="$t('uiAutomation.testCase.insertParameter')"
+                @click="openBaseUrlParameterHelper"
+              />
+            </template>
+          </el-input>
         </el-form-item>
         <el-form-item
           :label="$t('uiAutomation.project.startDate')"
@@ -314,6 +316,22 @@
             type="date"
             :placeholder="$t('uiAutomation.project.selectDate')"
           />
+        </el-form-item>
+        <el-form-item :label="$t('uiAutomation.project.loginTestCase')">
+          <el-select
+            v-model="editForm.login_test_case"
+            :placeholder="$t('uiAutomation.project.loginTestCasePlaceholder')"
+            clearable
+            filterable
+          >
+            <el-option
+              v-for="tc in loginTestCaseOptions"
+              :key="tc.id"
+              :label="tc.name"
+              :value="tc.id"
+            />
+          </el-select>
+          <div class="form-help-text">{{ $t('uiAutomation.project.loginTestCaseTip') }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -389,18 +407,76 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- base_url 项目参数选择器 -->
+    <el-dialog
+      :close-on-press-escape="false"
+      :modal="true"
+      v-model="showBaseUrlParameterHelper"
+      :title="$t('uiAutomation.testCase.parameterHelper')"
+      :close-on-click-modal="false"
+      width="700px"
+    >
+      <el-table
+        :data="baseUrlProjectParameters"
+        style="width: 100%"
+        @row-click="insertBaseUrlParameter"
+        highlight-current-row
+      >
+        <el-table-column
+          prop="name"
+          :label="$t('uiAutomation.testCase.parameterName')"
+          width="180"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.name }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="value"
+          :label="$t('uiAutomation.testCase.parameterValue')"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="description"
+          :label="$t('uiAutomation.testCase.description')"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          :label="$t('uiAutomation.testCase.operation')"
+          width="80"
+          fixed="right"
+        >
+          <template #default>
+            <el-button link type="primary" size="small">{{
+              $t("uiAutomation.testCase.insert")
+            }}</el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty
+            :description="$t('uiAutomation.testCase.parameterHelperEmpty')"
+          />
+        </template>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, nextTick } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus, Search, View, Edit, Delete } from "@element-plus/icons-vue";
+import { Plus, Search } from "@element-plus/icons-vue";
 import {
   getUiProjects,
   createUiProject,
   updateUiProject,
   deleteUiProject,
+  getUiProjectParameters,
+  getTestCases,
 } from "@/api/ui_automation";
 import { useI18n } from "vue-i18n";
 
@@ -425,6 +501,8 @@ const showEditDialog = ref(false);
 const createFormRef = ref(null);
 const editFormRef = ref(null);
 const currentEditId = ref(null);
+const showBaseUrlParameterHelper = ref(false);
+const baseUrlProjectParameters = ref([]);
 
 // 表单数据
 const createForm = reactive({
@@ -443,7 +521,10 @@ const editForm = reactive({
   base_url: "",
   start_date: null,
   end_date: null,
+  login_test_case: null,
 });
+
+const loginTestCaseOptions = ref([]);
 
 // 表单验证规则
 const formRules = computed(() => ({
@@ -467,8 +548,17 @@ const formRules = computed(() => ({
       trigger: "blur",
     },
     {
-      type: "url",
-      message: t("uiAutomation.project.rules.baseUrlInvalid"),
+      validator: (rule, value, callback) => {
+        if (!value) return callback();
+        // Allow {{variable}} template syntax or standard URL
+        if (/\{\{.+?\}\}/.test(value)) return callback();
+        try {
+          new URL(value);
+          callback();
+        } catch {
+          callback(new Error(t("uiAutomation.project.rules.baseUrlInvalid")));
+        }
+      },
       trigger: "blur",
     },
   ],
@@ -577,7 +667,7 @@ const goToProjectDetail = (id) => {
 };
 
 // 编辑项目
-const editProject = (project) => {
+const editProject = async (project) => {
   currentEditId.value = project.id;
   // 复制项目数据到编辑表单
   Object.assign(editForm, {
@@ -587,7 +677,15 @@ const editProject = (project) => {
     base_url: project.base_url,
     start_date: project.start_date ? new Date(project.start_date) : null,
     end_date: project.end_date ? new Date(project.end_date) : null,
+    login_test_case: project.login_test_case || null,
   });
+  // 加载该项目下的测试用例列表，用于登录用例选择器
+  try {
+    const res = await getTestCases({ project: project.id, page_size: 500 });
+    loginTestCaseOptions.value = res.data.results || res.data || [];
+  } catch {
+    loginTestCaseOptions.value = [];
+  }
   showEditDialog.value = true;
 };
 
@@ -688,6 +786,36 @@ const handleEdit = async () => {
   }
 };
 
+// base_url 参数选择器：{{参数名}} 引用，执行时由后端 parameter_resolver 取当前值替换
+// 只在编辑已存在的项目时可用（新建项目还没有 id，参数表还挂不上）
+const openBaseUrlParameterHelper = async () => {
+  if (!currentEditId.value) return;
+  showBaseUrlParameterHelper.value = true;
+  try {
+    const res = await getUiProjectParameters({
+      project: currentEditId.value,
+      page_size: 500,
+    });
+    baseUrlProjectParameters.value = res.data.results || res.data || [];
+  } catch {
+    baseUrlProjectParameters.value = [];
+    ElMessage.error(t("uiAutomation.messages.error.load"));
+  }
+};
+
+const insertBaseUrlParameter = (param) => {
+  const reference = `{{${param.name}}}`;
+  editForm.base_url = editForm.base_url
+    ? editForm.base_url + reference
+    : reference;
+  ElMessage.success(
+    t("uiAutomation.testCase.messages.parameterInserted", {
+      name: param.name,
+    }),
+  );
+  showBaseUrlParameterHelper.value = false;
+};
+
 // 组件挂载时加载数据
 onMounted(() => {
   loadProjects();
@@ -728,5 +856,12 @@ onMounted(() => {
   margin-top: 20px;
   display: flex;
   justify-content: flex-end;
+}
+
+.form-help-text {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.4;
+  margin-top: 4px;
 }
 </style>

@@ -842,7 +842,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, nextTick, watch } from "vue";
+import {
+  ref,
+  reactive,
+  onMounted,
+  onBeforeUnmount,
+  computed,
+  nextTick,
+  watch,
+} from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useI18n } from "vue-i18n";
 import {
@@ -1220,15 +1228,79 @@ const handleSuiteAction = async ({ action, suite }) => {
   }
 };
 
+// 套件执行改为后台 Celery 任务：接口立即返回执行记录（202），这里轮询执行详情直到结束
+const EXECUTION_POLL_INTERVAL = 2000;
+const EXECUTION_POLL_TIMEOUT = 30 * 60 * 1000; // 与 Celery 任务硬超时一致
+const PENDING_EXECUTION_STATUSES = ["PENDING", "RUNNING"];
+let executionPollStopped = false;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const waitForExecution = async (execution) => {
+  const deadline = Date.now() + EXECUTION_POLL_TIMEOUT;
+  let current = execution;
+  while (PENDING_EXECUTION_STATUSES.includes(current.status)) {
+    if (executionPollStopped) return null;
+    if (Date.now() > deadline) {
+      throw new Error("timeout");
+    }
+    await sleep(EXECUTION_POLL_INTERVAL);
+    const response = await api.get(
+      `/api-testing/test-executions/${current.id}/`,
+    );
+    current = response.data;
+  }
+  return current;
+};
+
+const getExecutionError = (execution) => {
+  const results = Array.isArray(execution?.results) ? execution.results : [];
+  if (results.length === 1 && results[0]?.error && !results[0]?.request_id) {
+    return results[0].error;
+  }
+  return "";
+};
+
 const runTestSuite = async (suite) => {
   running.value = true;
+  executionPollStopped = false;
   try {
     const response = await api.post(
       `/api-testing/test-suites/${suite.id}/execute/`,
     );
-    currentExecution.value = response.data;
-    showExecutionDialog.value = true;
+    if (PENDING_EXECUTION_STATUSES.includes(response.data.status)) {
+      ElMessage.info(t("apiTesting.messages.info.suiteExecutionQueued"));
+      await loadExecutions();
+    }
+
+    let execution;
+    try {
+      execution = await waitForExecution(response.data);
+    } catch (pollError) {
+      if (pollError?.message === "timeout") {
+        ElMessage.warning(
+          t("apiTesting.messages.warning.suiteExecutionTimeout"),
+        );
+      } else {
+        ElMessage.error(t("apiTesting.messages.error.executeSuite"));
+      }
+      return;
+    }
+    // 组件已卸载，停止处理
+    if (!execution) return;
+
     await loadExecutions();
+    const executionError = getExecutionError(execution);
+    if (executionError) {
+      ElMessage.error(
+        t("apiTesting.messages.error.suiteExecutionFailed", {
+          error: executionError,
+        }),
+      );
+      return;
+    }
+    currentExecution.value = execution;
+    showExecutionDialog.value = true;
     ElMessage.success(t("apiTesting.messages.success.suiteExecuted"));
   } catch (error) {
     ElMessage.error(t("apiTesting.messages.error.executeSuite"));
@@ -1236,6 +1308,10 @@ const runTestSuite = async (suite) => {
     running.value = false;
   }
 };
+
+onBeforeUnmount(() => {
+  executionPollStopped = true;
+});
 
 const editSuite = (suite) => {
   editingSuite.value = suite;

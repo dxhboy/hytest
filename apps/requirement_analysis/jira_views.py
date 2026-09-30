@@ -4,6 +4,7 @@ import threading
 import uuid
 
 from cryptography.fernet import Fernet, InvalidToken
+from django.db.models import Count
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from rest_framework import status
@@ -194,7 +195,7 @@ def jira_import(request):
 def jira_issues_list(request):
     project_id = request.query_params.get('project_id')
     version_id = request.query_params.get('version_id')
-    qs = JiraIssueLink.objects.filter(created_by=request.user)
+    qs = JiraIssueLink.objects.filter(created_by=request.user).annotate(case_total=Count('case_links'))
     if project_id:
         qs = qs.filter(project_id=project_id)
     if version_id:

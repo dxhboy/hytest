@@ -13,7 +13,7 @@ export default {
   loginFailed: "Login failed",
 
   // Register page
-  registerTitle: "Register TestHub",
+  registerTitle: "Register HyTest",
   registerSubtitle: "Create your test management account",
   username: "Username",
   email: "Email",
@@ -52,7 +52,7 @@ export default {
   passwordMismatch: "Passwords do not match",
 
   // Copyright
-  copyright: "© 2024 TestHub. All rights reserved.",
+  copyright: "© 2024 HyTest. All rights reserved.",
 
   // Language switcher
   languageZhCN: "简体中文",

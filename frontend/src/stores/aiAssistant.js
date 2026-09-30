@@ -14,10 +14,6 @@ export const useAiAssistantStore = defineStore('aiAssistant', () => {
     isOpen.value = !isOpen.value
   }
 
-  function openPanel() {
-    isOpen.value = true
-  }
-
   function closePanel() {
     isOpen.value = false
   }
@@ -80,7 +76,7 @@ export const useAiAssistantStore = defineStore('aiAssistant', () => {
 
   return {
     isOpen, currentSessionId, messages, loading, toolsInProgress, error,
-    togglePanel, openPanel, closePanel, startNewSession,
+    togglePanel, closePanel, startNewSession,
     send, loadSession, removeSession,
   }
 })

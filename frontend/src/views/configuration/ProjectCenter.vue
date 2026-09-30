@@ -51,10 +51,13 @@
           <el-table-column prop="created_at" :label="$t('project.createdAt')" width="170">
             <template #default="{ row }">{{ fmt(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column :label="$t('project.actions')" width="140" fixed="right">
+          <el-table-column :label="$t('project.actions')" width="140" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button size="small" @click="openAiDialog(row)">{{ $t('common.edit') }}</el-button>
-              <el-button size="small" type="danger" @click="deleteAiProject(row)">{{ $t('common.delete') }}</el-button>
+              <div class="action-col">
+                <el-button link type="primary" size="small" @click="openAiDialog(row)">{{ $t('common.edit') }}</el-button>
+                <span class="action-divider" />
+                <el-button link type="danger" size="small" @click="deleteAiProject(row)">{{ $t('common.delete') }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -73,7 +76,7 @@
           </el-button>
         </div>
 
-        <el-table :data="api.list" v-loading="api.loading" style="width:100%">
+        <el-table :data="apiState.list" v-loading="apiState.loading" style="width:100%">
           <el-table-column prop="name" :label="$t('apiTesting.project.projectName')" min-width="180" />
           <el-table-column prop="project_type" :label="$t('apiTesting.project.projectType')" width="110">
             <template #default="{ row }">
@@ -95,17 +98,21 @@
           </el-table-column>
           <el-table-column prop="start_date" :label="$t('apiTesting.project.startDate')" width="110" />
           <el-table-column prop="end_date" :label="$t('apiTesting.project.endDate')" width="110" />
-          <el-table-column :label="$t('apiTesting.common.operation')" width="160" fixed="right">
+          <el-table-column :label="$t('apiTesting.common.operation')" width="200" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openApiDialog(row)">{{ $t('apiTesting.common.edit') }}</el-button>
-              <el-button link type="primary" @click="viewApiProject(row)">{{ $t('apiTesting.common.view') }}</el-button>
-              <el-button link type="danger" @click="deleteApiProject(row)">{{ $t('apiTesting.common.delete') }}</el-button>
+              <div class="action-col">
+                <el-button link type="primary" size="small" @click="openApiDialog(row)">{{ $t('apiTesting.common.edit') }}</el-button>
+                <span class="action-divider" />
+                <el-button link type="primary" size="small" @click="viewApiProject(row)">{{ $t('apiTesting.common.view') }}</el-button>
+                <span class="action-divider" />
+                <el-button link type="danger" size="small" @click="deleteApiProject(row)">{{ $t('apiTesting.common.delete') }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
         <el-pagination
-          v-model:current-page="api.page" v-model:page-size="api.pageSize"
-          :page-sizes="[10,20,50]" :total="api.total"
+          v-model:current-page="apiState.page" v-model:page-size="apiState.pageSize"
+          :page-sizes="[10,20,50]" :total="apiState.total"
           layout="total, sizes, prev, pager, next" class="pagination"
           @size-change="loadApiProjects" @current-change="loadApiProjects"
         />
@@ -129,21 +136,24 @@
         </div>
 
         <el-table :data="ui.list" v-loading="ui.loading" style="width:100%">
-          <el-table-column prop="name" :label="$t('uiAutomation.project.name')" min-width="180" />
+          <el-table-column prop="name" :label="$t('uiAutomation.project.projectName')" min-width="180" />
           <el-table-column prop="base_url" :label="$t('uiAutomation.project.baseUrl')" min-width="220" show-overflow-tooltip />
-          <el-table-column prop="status" :label="$t('uiAutomation.project.status')" width="110">
+          <el-table-column prop="status" :label="$t('uiAutomation.common.status')" width="110">
             <template #default="{ row }">
               <el-tag :type="uiStatusType(row.status)">{{ uiStatusText(row.status) }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="owner.username" :label="$t('uiAutomation.project.owner')" width="120" />
-          <el-table-column prop="created_at" :label="$t('uiAutomation.project.createdAt')" width="170">
+          <el-table-column prop="created_at" :label="$t('uiAutomation.common.createTime')" width="170">
             <template #default="{ row }">{{ fmt(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column :label="$t('uiAutomation.project.actions')" width="140" fixed="right">
+          <el-table-column :label="$t('uiAutomation.common.operation')" width="140" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button size="small" @click="openUiDialog(row)">{{ $t('common.edit') }}</el-button>
-              <el-button size="small" type="danger" @click="deleteUiProject(row)">{{ $t('common.delete') }}</el-button>
+              <div class="action-col">
+                <el-button link type="primary" size="small" @click="openUiDialog(row)">{{ $t('common.edit') }}</el-button>
+                <span class="action-divider" />
+                <el-button link type="danger" size="small" @click="deleteUiProject(row)">{{ $t('common.delete') }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -267,24 +277,24 @@
     <!-- ===== UI 项目 Dialog ===== -->
     <el-dialog
       v-model="uiDialog.visible"
-      :title="uiDialog.editing ? $t('uiAutomation.project.edit') : $t('uiAutomation.project.create')"
+      :title="uiDialog.editing ? $t('uiAutomation.project.editProject') : $t('uiAutomation.project.createProject')"
       width="560px" :close-on-click-modal="false" @close="resetUiForm"
     >
       <el-form ref="uiFormRef" :model="uiDialog.form" :rules="uiRules" label-width="100px">
-        <el-form-item :label="$t('uiAutomation.project.name')" prop="name">
+        <el-form-item :label="$t('uiAutomation.project.projectName')" prop="name">
           <el-input v-model="uiDialog.form.name" />
         </el-form-item>
-        <el-form-item :label="$t('uiAutomation.project.description')">
+        <el-form-item :label="$t('uiAutomation.project.projectDesc')">
           <el-input v-model="uiDialog.form.description" type="textarea" :rows="3" />
         </el-form-item>
         <el-form-item :label="$t('uiAutomation.project.baseUrl')" prop="base_url">
           <el-input v-model="uiDialog.form.base_url" placeholder="https://example.com" />
         </el-form-item>
-        <el-form-item :label="$t('uiAutomation.project.status')" prop="status">
+        <el-form-item :label="$t('uiAutomation.common.status')" prop="status">
           <el-select v-model="uiDialog.form.status" style="width:100%">
-            <el-option :label="$t('uiAutomation.project.statusNotStarted')" value="NOT_STARTED" />
-            <el-option :label="$t('uiAutomation.project.statusInProgress')" value="IN_PROGRESS" />
-            <el-option :label="$t('uiAutomation.project.statusCompleted')" value="COMPLETED" />
+            <el-option :label="$t('uiAutomation.status.notStarted')" value="NOT_STARTED" />
+            <el-option :label="$t('uiAutomation.status.inProgress')" value="IN_PROGRESS" />
+            <el-option :label="$t('uiAutomation.status.completed')" value="COMPLETED" />
           </el-select>
         </el-form-item>
         <el-form-item :label="$t('uiAutomation.project.owner')" prop="owner">

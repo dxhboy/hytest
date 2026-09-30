@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from datetime import datetime
 
 
 class NullableDateField(serializers.DateField):
@@ -85,9 +84,20 @@ class ApiCollectionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_at', 'updated_at']
 
+    def _children_map(self, project_id):
+        """按项目一次性加载全部集合并按 parent 分组，递归序列化子节点时复用，避免逐节点查询"""
+        maps = self.context.setdefault('_api_collection_children', {})
+        if project_id not in maps:
+            grouped = {}
+            # 沿用模型默认排序 ['order', 'created_at']，与 obj.children.all() 一致
+            for col in ApiCollection.objects.filter(project_id=project_id):
+                grouped.setdefault(col.parent_id, []).append(col)
+            maps[project_id] = grouped
+        return maps[project_id]
+
     def get_children(self, obj):
-        children = obj.children.all()
-        return ApiCollectionSerializer(children, many=True).data
+        children = self._children_map(obj.project_id).get(obj.id, [])
+        return ApiCollectionSerializer(children, many=True, context=self.context).data
 
 
 class ApiRequestSerializer(serializers.ModelSerializer):
@@ -343,19 +353,9 @@ class ScheduledTaskSerializer(serializers.ModelSerializer):
         try:
             # 根据通知类型选择合适的通知配置
             from apps.core.models import UnifiedNotificationConfig
-            notification_config = None
-            if notification_type in ['webhook', 'both']:
-                # 如果需要Webhook通知，优先选择Webhook配置
-                notification_config = UnifiedNotificationConfig.objects.filter(
-                    config_type__in=['webhook_wechat', 'webhook_feishu', 'webhook_dingtalk'],
-                    is_active=True
-                ).first()
-                if not notification_config:
-                    logger.warning("没有找到可用的Webhook通知配置，使用默认邮件配置")
-                    notification_config = UnifiedNotificationConfig.objects.filter(is_default=True, is_active=True).first()
-            else:
-                # 邮件通知使用默认配置
-                notification_config = UnifiedNotificationConfig.objects.filter(is_default=True, is_active=True).first()
+            notification_config = UnifiedNotificationConfig.select_for_notification_type(
+                notification_type, logger=logger
+            )
 
             logger.info(f"选择的通知配置: {notification_config.name if notification_config else 'None'}")
 
@@ -405,19 +405,9 @@ class ScheduledTaskSerializer(serializers.ModelSerializer):
             from apps.core.models import UnifiedNotificationConfig
             try:
                 # 根据通知类型选择合适的通知配置
-                notification_config = None
-                if notification_type in ['webhook', 'both']:
-                    # 如果需要Webhook通知，优先选择Webhook配置
-                    notification_config = UnifiedNotificationConfig.objects.filter(
-                        config_type__in=['webhook_wechat', 'webhook_feishu', 'webhook_dingtalk'],
-                        is_active=True
-                    ).first()
-                    if not notification_config:
-                        logger.warning("没有找到可用的Webhook通知配置，使用默认邮件配置")
-                        notification_config = UnifiedNotificationConfig.objects.filter(is_default=True, is_active=True).first()
-                else:
-                    # 邮件通知使用默认配置
-                    notification_config = UnifiedNotificationConfig.objects.filter(is_default=True, is_active=True).first()
+                notification_config = UnifiedNotificationConfig.select_for_notification_type(
+                    notification_type, logger=logger
+                )
 
                 logger.info(f"选择的通知配置: {notification_config.name if notification_config else 'None'}")
 
@@ -629,52 +619,71 @@ class NotificationLogDetailSerializer(serializers.ModelSerializer):
         # 如果 task_type 为空，返回未记录，不要从 task 对象获取（避免显示修改后的值）
         return "未记录"
 
+    @staticmethod
+    def _recipient_emails(recipient_info):
+        """从 recipient_info（list 或 dict）中提取邮箱列表"""
+        if isinstance(recipient_info, list):
+            return [rec.get('email', '') for rec in recipient_info if isinstance(rec, dict) and rec.get('email', '')]
+        if isinstance(recipient_info, dict):
+            email = recipient_info.get('email', '')
+            return [email] if email else []
+        return []
+
+    def _email_user_map(self, emails):
+        """批量查询邮箱对应的用户，结果缓存在序列化器上。
+
+        列表序列化时一次性收集所有行的邮箱，只查一次数据库，避免逐个收件人 User.objects.get。
+        """
+        cache = getattr(self, '_email_user_cache', None)
+        if cache is None:
+            cache = {}
+            self._email_user_cache = cache
+            # many=True 时预取整页所有行的收件人
+            parent_instance = getattr(self.parent, 'instance', None) if self.parent is not None else None
+            if parent_instance is not None and not isinstance(parent_instance, NotificationLog):
+                try:
+                    for row in parent_instance:
+                        emails = list(emails) + self._recipient_emails(getattr(row, 'recipient_info', None))
+                except TypeError:
+                    pass
+        missing = {e.lower() for e in emails if e.lower() not in cache}
+        if missing:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            for e in missing:
+                cache[e] = None
+            # 同一邮箱存在多个用户时取 id 最小的
+            # 邮箱按小写匹配（与 MySQL 默认不区分大小写的排序规则一致）
+            for user in User.objects.filter(email__in=missing).order_by('-id'):
+                cache[(user.email or '').lower()] = user
+        return cache
+
     def get_formatted_recipients(self, obj):
         """获取格式化的收件人信息"""
         if not obj.recipient_info:
             return []
 
+        emails = self._recipient_emails(obj.recipient_info)
+        if not emails:
+            return []
+        user_map = self._email_user_map(emails)
+
         recipients = []
-        if isinstance(obj.recipient_info, list):
-            for rec in obj.recipient_info:
-                email = rec.get('email', '')
-                # 尝试从数据库获取用户的中文姓名
-                if email:
-                    from django.contrib.auth import get_user_model
-                    User = get_user_model()
-                    try:
-                        user = User.objects.get(email=email)
-                        name = user.first_name or user.username
-                        recipients.append({
-                            'name': name,
-                            'email': email,
-                            'display': f"{name}（{email}）"
-                        })
-                    except User.DoesNotExist:
-                        recipients.append({
-                            'name': email,
-                            'email': email,
-                            'display': email
-                        })
-        elif isinstance(obj.recipient_info, dict):
-            email = obj.recipient_info.get('email', '')
-            if email:
-                from django.contrib.auth import get_user_model
-                User = get_user_model()
-                try:
-                    user = User.objects.get(email=email)
-                    name = user.first_name or user.username
-                    recipients.append({
-                        'name': name,
-                        'email': email,
-                        'display': f"{name}（{email}）"
-                    })
-                except User.DoesNotExist:
-                    recipients.append({
-                        'name': email,
-                        'email': email,
-                        'display': email
-                    })
+        for email in emails:
+            user = user_map.get(email.lower())
+            if user is not None:
+                name = user.first_name or user.username
+                recipients.append({
+                    'name': name,
+                    'email': email,
+                    'display': f"{name}（{email}）"
+                })
+            else:
+                recipients.append({
+                    'name': email,
+                    'email': email,
+                    'display': email
+                })
         return recipients
 
     def get_webhook_bot_info_display(self, obj):
@@ -827,7 +836,7 @@ class OperationLogSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'operation_type', 'operation_type_display',
             'resource_type', 'resource_type_display', 'resource_id',
-            'resource_name', 'description', 'user', 'user_name', 'created_at'
+            'resource_name', 'description', 'user', 'user_name', 'project', 'created_at'
         ]
         read_only_fields = ['created_at']
 

@@ -1,7 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-import json
 
 User = get_user_model()
 
@@ -601,6 +600,10 @@ class OperationLog(models.Model):
     resource_name = models.CharField(max_length=200, verbose_name='资源名称')
     description = models.TextField(verbose_name='操作描述')
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, verbose_name='操作用户')
+    # 资源所属项目（写日志时由 operation_logger 自动推算），用于按项目隔离日志可见范围；
+    # 全局环境等不归属项目的资源为空，此类日志只对操作人本人可见
+    project = models.ForeignKey(ApiProject, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='operation_logs', verbose_name='所属项目')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
 
     class Meta:
@@ -612,6 +615,7 @@ class OperationLog(models.Model):
             models.Index(fields=['-created_at']),
             models.Index(fields=['resource_type', 'resource_id']),
             models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['project', '-created_at']),
         ]
 
     def __str__(self):

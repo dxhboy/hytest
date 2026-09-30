@@ -1,6 +1,5 @@
 from rest_framework import serializers
 from .models import TestPlan, TestRun, TestRunCase, TestRunCaseHistory
-from apps.testcases.models import TestCase
 from apps.users.serializers import UserSimpleSerializer
 
 class TestRunCaseHistorySerializer(serializers.ModelSerializer):

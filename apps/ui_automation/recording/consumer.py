@@ -17,14 +17,17 @@ from channels.db import database_sync_to_async
 from playwright.async_api import async_playwright
 
 from apps.ui_automation.models import RecordingSession
+from apps.ui_automation.browser_paths import find_installed_browser_path, PLAYWRIGHT_CHROMIUM_GLOB_PATTERNS
 from .action_recorder import ActionRecorder
 
 logger = logging.getLogger(__name__)
 
-# 截图帧质量（JPEG 0-100），越低越快
-FRAME_QUALITY = 65
-# 最大帧率（CDP screencast 的 maxWidth/maxHeight 用于控制分辨率）
-MAX_FPS = 12
+# 截图帧质量（JPEG 0-100），越低传输越快
+FRAME_QUALITY = 40
+# 最大帧率
+MAX_FPS = 8
+# 截图分辨率缩放比例（相对于 viewport）
+SCREENCAST_SCALE = 0.75
 
 
 class RecordingConsumer(AsyncWebsocketConsumer):
@@ -41,6 +44,7 @@ class RecordingConsumer(AsyncWebsocketConsumer):
         self.cdp_session = None
         self.recorder = ActionRecorder()
         self._screencast_running = False
+        self._frame_sending = False
         # 记录最后一次点击坐标，用于 fill 操作关联元素
         self._last_click_x = 0
         self._last_click_y = 0
@@ -70,6 +74,7 @@ class RecordingConsumer(AsyncWebsocketConsumer):
 
         try:
             await self._launch_browser()
+            await self.recorder.attach(self.page)
             await self._start_screencast()
             await self._send_status('ready')
         except Exception as e:
@@ -81,6 +86,7 @@ class RecordingConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         """WebSocket 断开 — 清理浏览器资源"""
         await self._stop_screencast()
+        await self.recorder.detach()
         await self._cleanup_browser()
 
     async def receive(self, text_data=None, bytes_data=None):
@@ -99,6 +105,7 @@ class RecordingConsumer(AsyncWebsocketConsumer):
             'keydown': self._handle_key,
             'scroll': self._handle_scroll,
             'input': self._handle_input,
+            'paste': self._handle_paste,
             'control': self._handle_control,
         }.get(msg_type)
 
@@ -111,21 +118,22 @@ class RecordingConsumer(AsyncWebsocketConsumer):
     # ---- 事件处理器 ----
 
     async def _handle_mouse_click(self, data):
-        """处理鼠标点击：转发到 Playwright + 录制"""
+        """处理鼠标点击：立即执行点击，同时提取元素信息"""
         x, y = data.get('x', 0), data.get('y', 0)
         self._last_click_x, self._last_click_y = x, y
         button = data.get('button', 'left')
 
-        # 先录制（提取元素信息），再执行点击
+        # 并行：立即执行点击 + 提取元素信息
+        click_task = asyncio.ensure_future(self.page.mouse.click(x, y, button=button))
         step = await self.recorder.record_click(self.page, x, y)
-        await self.page.mouse.click(x, y, button=button)
+        await click_task
 
         await self._send_action(step)
 
     async def _handle_mouse_move(self, data):
-        """处理鼠标移动（不录制，仅同步光标位置）"""
+        """处理鼠标移动（不录制，仅同步光标位置，不阻塞消息循环）"""
         x, y = data.get('x', 0), data.get('y', 0)
-        await self.page.mouse.move(x, y)
+        asyncio.ensure_future(self.page.mouse.move(x, y))
 
     async def _handle_key(self, data):
         """处理键盘按键"""
@@ -140,7 +148,7 @@ class RecordingConsumer(AsyncWebsocketConsumer):
         delta_y = data.get('deltaY', 0)
 
         step = await self.recorder.record_scroll(self.page, x, y, delta_x, delta_y)
-        await self.page.mouse.wheel(delta_x, delta_y)
+        asyncio.ensure_future(self.page.mouse.wheel(delta_x, delta_y))
 
         await self._send_action(step)
 
@@ -158,6 +166,21 @@ class RecordingConsumer(AsyncWebsocketConsumer):
         # 先清空现有内容再输入（triple-click 全选后输入）
         await self.page.mouse.click(self._last_click_x, self._last_click_y, click_count=3)
         await self.page.keyboard.type(text, delay=20)
+
+        await self._send_action(step)
+
+    async def _handle_paste(self, data):
+        """处理粘贴：将用户剪贴板文本直接插入当前焦点元素"""
+        text = data.get('text', '')
+        if not text:
+            return
+
+        step = await self.recorder.record_fill(
+            self.page, self._last_click_x, self._last_click_y, text
+        )
+
+        await self.page.keyboard.press('Control+a')
+        await self.page.keyboard.insert_text(text)
 
         await self._send_action(step)
 
@@ -182,12 +205,24 @@ class RecordingConsumer(AsyncWebsocketConsumer):
     # ---- Playwright 浏览器管理 ----
 
     async def _launch_browser(self):
-        """启动 Playwright chromium 浏览器"""
+        """启动 Playwright chromium 浏览器，优先复用系统已安装的 Chrome"""
+        import platform
+        system = platform.system()
+        extra_globs = PLAYWRIGHT_CHROMIUM_GLOB_PATTERNS if system == 'Linux' else None
+        chrome_path = find_installed_browser_path('chrome', system=system, extra_glob_patterns=extra_globs)
+
         self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(
-            headless=True,
-            args=['--no-sandbox', '--disable-gpu'],
-        )
+
+        launch_kwargs = {
+            'headless': True,
+            'args': ['--no-sandbox', '--disable-gpu'],
+        }
+        if chrome_path:
+            # 复用 UI 自动化执行时已安装的 Chrome/Chromium
+            launch_kwargs['executable_path'] = chrome_path
+            logger.info('录制使用已安装浏览器: %s', chrome_path)
+
+        self.browser = await self.playwright.chromium.launch(**launch_kwargs)
         self.context = await self.browser.new_context(
             viewport={
                 'width': self.session.viewport_width,
@@ -238,26 +273,32 @@ class RecordingConsumer(AsyncWebsocketConsumer):
         await self.cdp_session.send('Page.startScreencast', {
             'format': 'jpeg',
             'quality': FRAME_QUALITY,
-            'maxWidth': self.session.viewport_width,
-            'maxHeight': self.session.viewport_height,
-            'everyNthFrame': max(1, 60 // MAX_FPS),  # 每 N 帧取一帧
+            'maxWidth': int(self.session.viewport_width * SCREENCAST_SCALE),
+            'maxHeight': int(self.session.viewport_height * SCREENCAST_SCALE),
+            'everyNthFrame': max(1, 60 // MAX_FPS),
         })
 
     def _on_screencast_frame(self, params):
-        """CDP screencast 帧回调 — 推送到 WebSocket"""
+        """CDP screencast 帧回调 — 推送到 WebSocket，背压时丢帧"""
         session_id = params.get('sessionId', 0)
         data = params.get('data', '')
 
-        # 确认帧已接收（CDP 要求 ack 才会发下一帧）
         asyncio.ensure_future(
             self.cdp_session.send('Page.screencastFrameAck', {'sessionId': session_id})
         )
 
-        # 推送帧到前端
         if self._screencast_running and data:
-            asyncio.ensure_future(
-                self.send_json({'type': 'frame', 'data': data})
-            )
+            if self._frame_sending:
+                return
+            self._frame_sending = True
+            asyncio.ensure_future(self._send_frame(data))
+
+    async def _send_frame(self, data: str):
+        """发送帧并释放背压标记"""
+        try:
+            await self.send_json({'type': 'frame', 'data': data})
+        finally:
+            self._frame_sending = False
 
     async def _stop_screencast(self):
         """停止 CDP 截图流"""

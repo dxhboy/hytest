@@ -10,10 +10,15 @@ from datetime import datetime, timedelta
 from typing import Any
 
 # 设置标准输出编码为 UTF-8，避免 Windows 系统上的编码问题
+# 用 reconfigure 原地修改，不替换流对象（替换会让被丢弃的旧包装器在回收时关闭底层文件，
+# 导致 pytest 输出捕获等持有原流的代码报 "I/O operation on closed file"）
 if sys.platform == 'win32':
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, 'reconfigure'):
+            try:
+                _stream.reconfigure(encoding='utf-8', errors='replace')
+            except (ValueError, OSError):
+                pass
 
 # 导入数据工厂的工具类
 from apps.data_factory.tools.random_tools import RandomTools

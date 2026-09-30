@@ -1,5 +1,6 @@
 # 忽略虚拟环境及项目产生的临时文件
 .venv/
+venv/
 .idea/
 .claude/
 .superpowers/
@@ -38,6 +39,24 @@ frontend/.DS_Store
 frontend/*.log
 frontend/dist/
 
+# workspace 项目数据（需求文档、生成产物不入库，目录结构保留）
+workspace/projects/*/requirements/*
+!workspace/projects/*/requirements/.gitkeep
+workspace/projects/*/testcases/*
+!workspace/projects/*/testcases/.gitkeep
+workspace/projects/*/api-scripts/*
+!workspace/projects/*/api-scripts/.gitkeep
+workspace/projects/*/ui-scripts/*
+!workspace/projects/*/ui-scripts/.gitkeep
+
+# Allure CLI (install via package manager)
+allure/
+
+# Client config with secrets
+client/config.json
+# 远程浏览器客户端运行时下载的依赖（如 selenium-server jar，体积大，不入库）
+client/lib/
+
 # Docker
 Dockerfile*
 docker-compose*.yml
@@ -45,3 +64,5 @@ docker-compose*.yml
 nginx.conf
 Makefile
 build-multiplatform.sh
+# Celery Beat 本地调度状态
+celerybeat-schedule*

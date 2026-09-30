@@ -213,49 +213,44 @@
         </el-table-column>
         <el-table-column
           :label="$t('uiAutomation.common.operation')"
-          width="200"
+          width="160"
           fixed="right"
+          align="center"
         >
           <template #default="scope">
-            <el-button
-              size="small"
-              @click="runTaskNow(scope.row)"
-              :loading="scope.row.running"
-            >
-              {{ $t("uiAutomation.scheduledTask.runNow") }}
-            </el-button>
-            <el-dropdown
-              @command="(command) => handleTaskAction(command, scope.row)"
-            >
-              <el-button size="small">
-                {{ $t("uiAutomation.scheduledTask.more")
-                }}<el-icon><arrow-down /></el-icon>
+            <div class="action-col">
+              <el-button link type="primary" size="small" @click="runTaskNow(scope.row)" :loading="scope.row.running">
+                {{ $t("uiAutomation.scheduledTask.runNow") }}
               </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="edit">{{
-                    $t("uiAutomation.scheduledTask.actions.edit")
-                  }}</el-dropdown-item>
-                  <el-dropdown-item
-                    command="pause"
-                    v-if="scope.row.status === 'ACTIVE'"
+              <span class="action-divider" />
+              <el-dropdown @command="(command) => handleTaskAction(command, scope.row)">
+                <el-button link type="primary" size="small">
+                  {{ $t("uiAutomation.scheduledTask.more") }}<el-icon><arrow-down /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="edit">{{
+                      $t("uiAutomation.scheduledTask.actions.edit")
+                    }}</el-dropdown-item>
+                    <el-dropdown-item
+                      command="pause"
+                      v-if="scope.row.status === 'ACTIVE'"
                     >{{
                       $t("uiAutomation.scheduledTask.actions.pause")
-                    }}</el-dropdown-item
-                  >
-                  <el-dropdown-item
-                    command="resume"
-                    v-if="scope.row.status === 'PAUSED'"
+                    }}</el-dropdown-item>
+                    <el-dropdown-item
+                      command="resume"
+                      v-if="scope.row.status === 'PAUSED'"
                     >{{
                       $t("uiAutomation.scheduledTask.actions.resume")
-                    }}</el-dropdown-item
-                  >
-                  <el-dropdown-item command="delete" divided>{{
-                    $t("uiAutomation.scheduledTask.actions.delete")
-                  }}</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+                    }}</el-dropdown-item>
+                    <el-dropdown-item command="delete" divided>{{
+                      $t("uiAutomation.scheduledTask.actions.delete")
+                    }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -526,7 +521,7 @@
             <el-option
               v-for="svc in remoteServices"
               :key="svc.id"
-              :label="`${svc.name} (${svc.service_type_display})`"
+              :label="svc.name"
               :value="svc.id"
             />
           </el-select>
@@ -810,8 +805,15 @@ async function fetchRemoteServices() {
     const res = await getRemoteBrowserServices({
       project: taskForm.project,
       is_active: true,
+      online: true,
     });
-    remoteServices.value = res.data?.results || res.data || [];
+    const list = res.data?.results || res.data || [];
+    // 前端再兜底过滤一次，不管后端筛选是否生效，都不展示已停用/已离线的服务。
+    // is_online 是后端新加的字段，用 !== false（而不是 === true）兼容后端还没
+    // 部署这次改动的情况，不会把老数据全部误判成离线
+    remoteServices.value = list.filter(
+      (s) => s.is_active !== false && s.is_online !== false,
+    );
   } catch (e) {
     console.error("Failed to fetch remote services:", e);
   }

@@ -60,10 +60,18 @@
         />
         <el-table-column
           :label="$t('uiAutomation.suite.testCaseCount')"
-          width="120"
+          width="100"
         >
           <template #default="{ row }">
             {{ row.test_case_count || 0 }}
+          </template>
+        </el-table-column>
+        <el-table-column
+          :label="$t('uiAutomation.suite.scriptCount')"
+          width="100"
+        >
+          <template #default="{ row }">
+            {{ row.script_count || 0 }}
           </template>
         </el-table-column>
         <el-table-column
@@ -111,32 +119,34 @@
           prop="created_at"
           :label="$t('uiAutomation.common.createTime')"
           width="180"
-          :formatter="formatDate"
+          :formatter="localeDateTimeFormatter"
         />
         <el-table-column
           prop="updated_at"
           :label="$t('uiAutomation.common.updateTime')"
           width="180"
-          :formatter="formatDate"
+          :formatter="localeDateTimeFormatter"
         />
         <el-table-column
           :label="$t('uiAutomation.common.operation')"
-          width="240"
+          width="200"
           fixed="right"
+          align="center"
         >
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="editSuite(row.id)">
-              <el-icon><Edit /></el-icon>
-              {{ $t("uiAutomation.common.edit") }}
-            </el-button>
-            <el-button size="small" type="success" @click="runSuite(row)">
-              <el-icon><RefreshRight /></el-icon>
-              {{ $t("uiAutomation.common.run") }}
-            </el-button>
-            <el-button size="small" type="danger" @click="deleteSuite(row.id)">
-              <el-icon><Delete /></el-icon>
-              {{ $t("uiAutomation.common.delete") }}
-            </el-button>
+            <div class="action-col">
+              <el-button link type="primary" size="small" @click="editSuite(row.id)">
+                {{ $t("uiAutomation.common.edit") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="primary" size="small" @click="runSuite(row)">
+                {{ $t("uiAutomation.common.run") }}
+              </el-button>
+              <span class="action-divider" />
+              <el-button link type="danger" size="small" @click="deleteSuite(row.id)">
+                {{ $t("uiAutomation.common.delete") }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -193,138 +203,313 @@
             <el-radio value="private">{{ $t('uiAutomation.common.visibleSelf') }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item :label="$t('uiAutomation.suite.testCases')">
-          <div class="test-case-selector">
-            <div class="selector-panel">
-              <div class="panel-header">
-                <h4>{{ $t("uiAutomation.suite.availableCases") }}</h4>
-                <el-input
-                  v-model="testCaseSearchText"
-                  :placeholder="$t('uiAutomation.suite.searchCases')"
-                  size="small"
-                  clearable
-                  style="width: 200px"
-                >
-                  <template #prefix>
-                    <el-icon><Search /></el-icon>
-                  </template>
-                </el-input>
-              </div>
-              <div class="panel-content">
-                <el-table
-                  :data="filteredAvailableTestCases"
-                  height="300"
-                  @row-click="handleTestCaseRowClick"
-                  :row-class-name="getTestCaseRowClassName"
-                >
-                  <el-table-column
-                    prop="name"
-                    :label="$t('uiAutomation.suite.caseName')"
-                    min-width="150"
-                    show-overflow-tooltip
-                  />
-                  <el-table-column
-                    prop="priority"
-                    :label="$t('uiAutomation.suite.priority')"
-                    width="80"
-                  >
-                    <template #default="{ row }">
-                      <el-tag size="small" :type="getPriorityTag(row.priority)">
-                        {{ getPriorityText(row.priority) }}
-                      </el-tag>
-                    </template>
-                  </el-table-column>
-                  <el-table-column
-                    prop="status"
-                    :label="$t('uiAutomation.common.status')"
-                    width="80"
-                  >
-                    <template #default="{ row }">
-                      <el-tag size="small" :type="getCaseStatusTag(row.status)">
-                        {{ getCaseStatusText(row.status) }}
-                      </el-tag>
-                    </template>
-                  </el-table-column>
-                  <el-table-column
-                    :label="$t('uiAutomation.common.operation')"
-                    width="80"
-                  >
-                    <template #default="{ row }">
-                      <el-button
-                        size="small"
-                        text
-                        @click.stop="addTestCase(row)"
+        <el-form-item :label="$t('uiAutomation.suite.reuseBrowser')">
+          <el-switch v-model="createForm.reuse_browser" />
+          <span class="form-help-inline">{{ $t('uiAutomation.suite.reuseBrowserTip') }}</span>
+        </el-form-item>
+        <el-form-item :label="$t('uiAutomation.suite.suiteItems')">
+          <el-tabs v-model="suiteItemTab" style="width: 100%">
+            <el-tab-pane
+              :label="`${$t('uiAutomation.suite.testCases')} (${selectedTestCases.length})`"
+              name="testCases"
+            >
+              <div class="test-case-selector">
+                <div class="selector-panel">
+                  <div class="panel-header">
+                    <h4>{{ $t("uiAutomation.suite.availableCases") }}</h4>
+                    <el-input
+                      v-model="testCaseSearchText"
+                      :placeholder="$t('uiAutomation.suite.searchCases')"
+                      size="small"
+                      clearable
+                      style="width: 200px"
+                    >
+                      <template #prefix>
+                        <el-icon><Search /></el-icon>
+                      </template>
+                    </el-input>
+                  </div>
+                  <div class="panel-content">
+                    <el-table
+                      :data="filteredAvailableTestCases"
+                      height="300"
+                      @row-click="handleTestCaseRowClick"
+                      :row-class-name="getTestCaseRowClassName"
+                    >
+                      <el-table-column
+                        prop="name"
+                        :label="$t('uiAutomation.suite.caseName')"
+                        min-width="150"
+                        show-overflow-tooltip
+                      />
+                      <el-table-column
+                        prop="priority"
+                        :label="$t('uiAutomation.suite.priority')"
+                        width="80"
                       >
-                        <el-icon><ArrowRight /></el-icon>
-                      </el-button>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-            </div>
+                        <template #default="{ row }">
+                          <el-tag size="small" :type="getPriorityTag(row.priority)">
+                            {{ getPriorityText(row.priority) }}
+                          </el-tag>
+                        </template>
+                      </el-table-column>
+                      <el-table-column
+                        prop="status"
+                        :label="$t('uiAutomation.common.status')"
+                        width="80"
+                      >
+                        <template #default="{ row }">
+                          <el-tag size="small" :type="getCaseStatusTag(row.status)">
+                            {{ getCaseStatusText(row.status) }}
+                          </el-tag>
+                        </template>
+                      </el-table-column>
+                      <el-table-column
+                        :label="$t('uiAutomation.common.operation')"
+                        width="80"
+                      >
+                        <template #default="{ row }">
+                          <el-button
+                            size="small"
+                            text
+                            @click.stop="addTestCase(row)"
+                          >
+                            <el-icon><ArrowRight /></el-icon>
+                          </el-button>
+                        </template>
+                      </el-table-column>
+                    </el-table>
+                  </div>
+                </div>
 
-            <div class="selector-panel">
-              <div class="panel-header">
-                <h4>
-                  {{ $t("uiAutomation.suite.selectedCases") }} ({{
-                    selectedTestCases.length
-                  }})
-                </h4>
+                <div class="selector-panel">
+                  <div class="panel-header">
+                    <h4>
+                      {{ $t("uiAutomation.suite.selectedCases") }} ({{
+                        selectedTestCases.length
+                      }})
+                    </h4>
+                  </div>
+                  <div class="panel-content">
+                    <el-table :data="selectedTestCases" height="300">
+                      <el-table-column
+                        prop="name"
+                        :label="$t('uiAutomation.suite.caseName')"
+                        min-width="150"
+                        show-overflow-tooltip
+                      />
+                      <el-table-column
+                        prop="priority"
+                        :label="$t('uiAutomation.suite.priority')"
+                        width="80"
+                      >
+                        <template #default="{ row }">
+                          <el-tag size="small" :type="getPriorityTag(row.priority)">
+                            {{ getPriorityText(row.priority) }}
+                          </el-tag>
+                        </template>
+                      </el-table-column>
+                      <el-table-column
+                        :label="$t('uiAutomation.common.operation')"
+                        width="120"
+                      >
+                        <template #default="{ $index }">
+                          <el-button
+                            size="small"
+                            text
+                            @click="moveUp($index)"
+                            :disabled="$index === 0"
+                          >
+                            <el-icon><Top /></el-icon>
+                          </el-button>
+                          <el-button
+                            size="small"
+                            text
+                            @click="moveDown($index)"
+                            :disabled="$index === selectedTestCases.length - 1"
+                          >
+                            <el-icon><Bottom /></el-icon>
+                          </el-button>
+                          <el-button
+                            size="small"
+                            text
+                            type="danger"
+                            @click="removeTestCase($index)"
+                          >
+                            <el-icon><Delete /></el-icon>
+                          </el-button>
+                        </template>
+                      </el-table-column>
+                    </el-table>
+                  </div>
+                </div>
               </div>
-              <div class="panel-content">
-                <el-table :data="selectedTestCases" height="300">
-                  <el-table-column
-                    prop="name"
-                    :label="$t('uiAutomation.suite.caseName')"
-                    min-width="150"
-                    show-overflow-tooltip
-                  />
-                  <el-table-column
-                    prop="priority"
-                    :label="$t('uiAutomation.suite.priority')"
-                    width="80"
-                  >
-                    <template #default="{ row }">
-                      <el-tag size="small" :type="getPriorityTag(row.priority)">
-                        {{ getPriorityText(row.priority) }}
-                      </el-tag>
-                    </template>
-                  </el-table-column>
-                  <el-table-column
-                    :label="$t('uiAutomation.common.operation')"
-                    width="120"
-                  >
-                    <template #default="{ $index }">
-                      <el-button
-                        size="small"
-                        text
-                        @click="moveUp($index)"
-                        :disabled="$index === 0"
+            </el-tab-pane>
+
+            <el-tab-pane
+              :label="`${$t('uiAutomation.suite.scripts')} (${selectedScripts.length})`"
+              name="scripts"
+            >
+              <div class="test-case-selector">
+                <div class="selector-panel">
+                  <div class="panel-header">
+                    <h4>{{ $t("uiAutomation.suite.availableScripts") }}</h4>
+                    <el-input
+                      v-model="scriptSearchText"
+                      :placeholder="$t('uiAutomation.suite.searchScripts')"
+                      size="small"
+                      clearable
+                      style="width: 200px"
+                    >
+                      <template #prefix>
+                        <el-icon><Search /></el-icon>
+                      </template>
+                    </el-input>
+                  </div>
+                  <div class="panel-content">
+                    <el-table
+                      :data="filteredAvailableScripts"
+                      height="300"
+                      @row-click="addScript"
+                      :row-class-name="getScriptRowClassName"
+                    >
+                      <el-table-column
+                        prop="name"
+                        :label="$t('uiAutomation.suite.scriptName')"
+                        min-width="150"
+                        show-overflow-tooltip
+                      />
+                      <el-table-column
+                        prop="framework"
+                        :label="$t('uiAutomation.suite.framework')"
+                        width="100"
                       >
-                        <el-icon><Top /></el-icon>
-                      </el-button>
-                      <el-button
-                        size="small"
-                        text
-                        @click="moveDown($index)"
-                        :disabled="$index === selectedTestCases.length - 1"
+                        <template #default="{ row }">
+                          <el-tag size="small">{{ row.framework }}</el-tag>
+                        </template>
+                      </el-table-column>
+                      <el-table-column
+                        prop="language"
+                        :label="$t('uiAutomation.suite.language')"
+                        width="80"
                       >
-                        <el-icon><Bottom /></el-icon>
-                      </el-button>
-                      <el-button
-                        size="small"
-                        text
-                        type="danger"
-                        @click="removeTestCase($index)"
+                        <template #default="{ row }">
+                          {{ row.language }}
+                        </template>
+                      </el-table-column>
+                      <el-table-column
+                        :label="$t('uiAutomation.common.operation')"
+                        width="80"
                       >
-                        <el-icon><Delete /></el-icon>
-                      </el-button>
-                    </template>
-                  </el-table-column>
-                </el-table>
+                        <template #default="{ row }">
+                          <el-button
+                            size="small"
+                            text
+                            @click.stop="addScript(row)"
+                          >
+                            <el-icon><ArrowRight /></el-icon>
+                          </el-button>
+                        </template>
+                      </el-table-column>
+                    </el-table>
+                  </div>
+                </div>
+
+                <div class="selector-panel">
+                  <div class="panel-header">
+                    <h4>
+                      {{ $t("uiAutomation.suite.selectedScripts") }} ({{
+                        selectedScripts.length
+                      }})
+                    </h4>
+                  </div>
+                  <div class="panel-content">
+                    <el-table :data="selectedScripts" height="300">
+                      <el-table-column
+                        prop="name"
+                        :label="$t('uiAutomation.suite.scriptName')"
+                        min-width="150"
+                        show-overflow-tooltip
+                      />
+                      <el-table-column
+                        prop="framework"
+                        :label="$t('uiAutomation.suite.framework')"
+                        width="100"
+                      >
+                        <template #default="{ row }">
+                          <el-tag size="small">{{ row.framework }}</el-tag>
+                        </template>
+                      </el-table-column>
+                      <el-table-column
+                        :label="$t('uiAutomation.common.operation')"
+                        width="120"
+                      >
+                        <template #default="{ $index }">
+                          <el-button
+                            size="small"
+                            text
+                            @click="moveScriptUp($index)"
+                            :disabled="$index === 0"
+                          >
+                            <el-icon><Top /></el-icon>
+                          </el-button>
+                          <el-button
+                            size="small"
+                            text
+                            @click="moveScriptDown($index)"
+                            :disabled="$index === selectedScripts.length - 1"
+                          >
+                            <el-icon><Bottom /></el-icon>
+                          </el-button>
+                          <el-button
+                            size="small"
+                            text
+                            type="danger"
+                            @click="removeScript($index)"
+                          >
+                            <el-icon><Delete /></el-icon>
+                          </el-button>
+                        </template>
+                      </el-table-column>
+                    </el-table>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            </el-tab-pane>
+
+            <el-tab-pane
+              :label="`${$t('uiAutomation.suite.executionOrder')} (${executionOrder.length})`"
+              name="executionOrder"
+            >
+              <div class="execution-order-tip" v-if="executionOrder.length === 0">
+                <el-empty :description="$t('uiAutomation.suite.executionOrderEmpty')" :image-size="60" />
+              </div>
+              <el-table v-else :data="executionOrder" height="350">
+                <el-table-column type="index" width="50" :label="$t('uiAutomation.suite.orderNum')" />
+                <el-table-column :label="$t('uiAutomation.suite.itemType')" width="80">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="row._type === 'case' ? '' : 'success'">
+                      {{ row._type === 'case' ? $t('uiAutomation.suite.typeCase') : $t('uiAutomation.suite.typeScript') }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="name" :label="$t('uiAutomation.common.name')" min-width="200" show-overflow-tooltip />
+                <el-table-column :label="$t('uiAutomation.common.operation')" width="120">
+                  <template #default="{ $index }">
+                    <el-button size="small" text @click="moveOrderUp($index)" :disabled="$index === 0">
+                      <el-icon><Top /></el-icon>
+                    </el-button>
+                    <el-button size="small" text @click="moveOrderDown($index)" :disabled="$index === executionOrder.length - 1">
+                      <el-icon><Bottom /></el-icon>
+                    </el-button>
+                    <el-button size="small" text type="danger" @click="removeOrderItem($index)">
+                      <el-icon><Delete /></el-icon>
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-tab-pane>
+          </el-tabs>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -376,6 +561,12 @@
               $t("uiAutomation.suite.headlessMode")
             }}</el-radio>
           </el-radio-group>
+          <div
+            v-if="runConfig.executionMode === 'remote'"
+            class="form-help-text"
+          >
+            {{ $t("uiAutomation.execution.remoteHeadlessHint") }}
+          </div>
         </el-form-item>
         <el-form-item :label="$t('uiAutomation.execution.executionMode')">
           <el-radio-group v-model="runConfig.executionMode" @change="onExecutionModeChange">
@@ -396,7 +587,7 @@
             <el-option
               v-for="svc in remoteServices"
               :key="svc.id"
-              :label="`${svc.name} (${svc.service_type_display})`"
+              :label="svc.name"
               :value="svc.id"
             />
           </el-select>
@@ -417,15 +608,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   Plus,
   Search,
-  Edit,
   Delete,
-  RefreshRight,
-  Collection,
   ArrowRight,
   Top,
   Bottom,
@@ -443,8 +631,13 @@ import {
   updateTestCaseOrder,
   runTestSuite,
   getRemoteBrowserServices,
+  getTestScripts,
+  getTestSuiteScripts,
+  addScriptToTestSuite,
+  removeScriptFromTestSuite,
 } from "@/api/ui_automation";
 import { useI18n } from "vue-i18n";
+import { localeDateTimeFormatter } from "@/utils/format";
 
 const { t } = useI18n();
 
@@ -473,6 +666,7 @@ const createForm = reactive({
   name: "",
   description: "",
   visibility: "all",
+  reuse_browser: false,
 });
 
 // 表单验证规则 - 使用 computed 实现动态国际化
@@ -490,6 +684,12 @@ const formRules = computed(() => ({
 const availableTestCases = ref([]);
 const selectedTestCases = ref([]);
 const testCaseSearchText = ref("");
+
+// 脚本相关
+const availableScripts = ref([]);
+const selectedScripts = ref([]);
+const scriptSearchText = ref("");
+const suiteItemTab = ref("testCases");
 
 // 运行配置
 const runConfig = reactive({
@@ -517,7 +717,78 @@ const filteredAvailableTestCases = computed(() => {
   );
 });
 
-// 加载项目列表
+const executionOrder = ref([]);
+
+const syncExecutionOrder = () => {
+  const caseItems = selectedTestCases.value.map((tc) => ({
+    ...tc,
+    _type: "case",
+    _id: `case_${tc.id}`,
+  }));
+  const scriptItems = selectedScripts.value.map((s) => ({
+    ...s,
+    _type: "script",
+    _id: `script_${s.id}`,
+  }));
+
+  const existingIds = new Set(executionOrder.value.map((item) => item._id));
+  const newItems = [...caseItems, ...scriptItems].filter(
+    (item) => !existingIds.has(item._id),
+  );
+
+  executionOrder.value = executionOrder.value
+    .filter((item) => {
+      if (item._type === "case")
+        return selectedTestCases.value.some((tc) => tc.id === item.id);
+      return selectedScripts.value.some((s) => s.id === item.id);
+    })
+    .concat(newItems);
+};
+
+watch([selectedTestCases, selectedScripts], syncExecutionOrder, { deep: true });
+
+const moveOrderUp = (index) => {
+  if (index > 0) {
+    const list = executionOrder.value;
+    const temp = list[index];
+    list[index] = list[index - 1];
+    list[index - 1] = temp;
+  }
+};
+
+const moveOrderDown = (index) => {
+  if (index < executionOrder.value.length - 1) {
+    const list = executionOrder.value;
+    const temp = list[index];
+    list[index] = list[index + 1];
+    list[index + 1] = temp;
+  }
+};
+
+const removeOrderItem = (index) => {
+  const item = executionOrder.value[index];
+  executionOrder.value.splice(index, 1);
+  if (item._type === "case") {
+    const ci = selectedTestCases.value.findIndex((tc) => tc.id === item.id);
+    if (ci >= 0) selectedTestCases.value.splice(ci, 1);
+  } else {
+    const si = selectedScripts.value.findIndex((s) => s.id === item.id);
+    if (si >= 0) selectedScripts.value.splice(si, 1);
+  }
+};
+
+const filteredAvailableScripts = computed(() => {
+  if (!scriptSearchText.value) {
+    return availableScripts.value;
+  }
+  const q = scriptSearchText.value.toLowerCase();
+  return availableScripts.value.filter(
+    (s) =>
+      s.name.toLowerCase().includes(q) ||
+      (s.description && s.description.toLowerCase().includes(q)),
+  );
+});
+
 const loadProjects = async () => {
   try {
     const response = await getUiProjects({ page_size: 100 });
@@ -576,7 +847,19 @@ const loadAvailableTestCases = async () => {
   }
 };
 
-// 项目切换
+const loadAvailableScripts = async () => {
+  if (!projectId.value) return;
+  try {
+    const response = await getTestScripts({
+      project: projectId.value,
+      page_size: 1000,
+    });
+    availableScripts.value = response.data.results || response.data;
+  } catch (error) {
+    console.error("Failed to load scripts:", error);
+  }
+};
+
 const onProjectChange = async () => {
   pagination.currentPage = 1;
   await loadSuites();
@@ -617,6 +900,7 @@ const handleCreate = async () => {
       name: createForm.name,
       description: createForm.description,
       visibility: createForm.visibility,
+      reuse_browser: createForm.reuse_browser,
     };
 
     let suiteId;
@@ -632,20 +916,30 @@ const handleCreate = async () => {
       ElMessage.success(t("uiAutomation.suite.messages.createSuccess"));
     }
 
-    // 保存测试用例关联
-    if (selectedTestCases.value.length > 0) {
-      // 清除旧的关联（如果是编辑模式）
-      if (isEditing.value) {
-        const existingTestCases = await getTestSuiteTestCases(suiteId);
-        for (const tc of existingTestCases.data) {
-          await removeTestCaseFromTestSuite(suiteId, tc.test_case.id);
-        }
+    // 清除旧关联
+    if (isEditing.value) {
+      const existingTestCases = await getTestSuiteTestCases(suiteId);
+      for (const tc of existingTestCases.data) {
+        await removeTestCaseFromTestSuite(suiteId, tc.test_case.id);
       }
+      const existingScripts = await getTestSuiteScripts(suiteId);
+      for (const ss of existingScripts.data) {
+        await removeScriptFromTestSuite(suiteId, ss.test_script.id);
+      }
+    }
 
-      // 添加新的关联
-      for (let i = 0; i < selectedTestCases.value.length; i++) {
+    // 按执行顺序保存关联（统一 order 序号）
+    syncExecutionOrder();
+    for (let i = 0; i < executionOrder.value.length; i++) {
+      const item = executionOrder.value[i];
+      if (item._type === "case") {
         await addTestCaseToTestSuite(suiteId, {
-          test_case_id: selectedTestCases.value[i].id,
+          test_case_id: item.id,
+          order: i,
+        });
+      } else {
+        await addScriptToTestSuite(suiteId, {
+          test_script_id: item.id,
           order: i,
         });
       }
@@ -674,15 +968,42 @@ const editSuite = async (id) => {
     createForm.name = suites_data.name;
     createForm.description = suites_data.description;
     createForm.visibility = suites_data.visibility || "all";
+    createForm.reuse_browser = suites_data.reuse_browser || false;
 
-    // 加载已选测试用例
-    const response = await getTestSuiteTestCases(id);
-    selectedTestCases.value = response.data
-      .map((item) => item.test_case)
-      .sort((a, b) => a.order - b.order);
+    // 加载已选测试用例和脚本，按统一 order 合并
+    const [tcResponse, scriptResponse] = await Promise.all([
+      getTestSuiteTestCases(id),
+      getTestSuiteScripts(id),
+    ]);
 
-    // 加载可用测试用例
-    await loadAvailableTestCases();
+    const caseItems = (tcResponse.data || []).map((item) => ({
+      ...item.test_case,
+      _type: "case",
+      _id: `case_${item.test_case.id}`,
+      _order: item.order,
+    }));
+    const scriptItems = (scriptResponse.data || []).map((item) => ({
+      ...item.test_script,
+      _type: "script",
+      _id: `script_${item.test_script.id}`,
+      _order: item.order,
+    }));
+
+    // 统一按 order 排序
+    const allItems = [...caseItems, ...scriptItems].sort(
+      (a, b) => a._order - b._order,
+    );
+    executionOrder.value = allItems;
+
+    selectedTestCases.value = caseItems
+      .sort((a, b) => a._order - b._order)
+      .map(({ _type, _id, _order, ...rest }) => rest);
+    selectedScripts.value = scriptItems
+      .sort((a, b) => a._order - b._order)
+      .map(({ _type, _id, _order, ...rest }) => rest);
+
+    // 加载可用测试用例和脚本
+    await Promise.all([loadAvailableTestCases(), loadAvailableScripts()]);
 
     showCreateDialog.value = true;
   } catch (error) {
@@ -717,8 +1038,8 @@ const deleteSuite = async (id) => {
 
 // 运行套件
 const runSuite = (suite) => {
-  // 检查是否包含测试用例
-  if (!suite.test_case_count || suite.test_case_count === 0) {
+  const totalItems = (suite.test_case_count || 0) + (suite.script_count || 0);
+  if (totalItems === 0) {
     ElMessage.warning(t("uiAutomation.suite.messages.noCases"));
     return;
   }
@@ -742,8 +1063,15 @@ async function fetchRemoteServices() {
     const res = await getRemoteBrowserServices({
       project: projectId.value,
       is_active: true,
+      online: true,
     });
-    remoteServices.value = res.data?.results || res.data || [];
+    const list = res.data?.results || res.data || [];
+    // 前端再兜底过滤一次，不管后端筛选是否生效，都不展示已停用/已离线的服务。
+    // is_online 是后端新加的字段，用 !== false（而不是 === true）兼容后端还没
+    // 部署这次改动的情况，不会把老数据全部误判成离线
+    remoteServices.value = list.filter(
+      (s) => s.is_active !== false && s.is_online !== false,
+    );
   } catch (e) {
     console.error("Failed to fetch remote services:", e);
   }
@@ -886,13 +1214,51 @@ const moveDown = (index) => {
   }
 };
 
-// 重置表单
+const addScript = (script) => {
+  if (selectedScripts.value.some((s) => s.id === script.id)) {
+    ElMessage.warning(t("uiAutomation.suite.messages.scriptAdded"));
+    return;
+  }
+  selectedScripts.value.push({ ...script });
+};
+
+const removeScript = (index) => {
+  selectedScripts.value.splice(index, 1);
+};
+
+const moveScriptUp = (index) => {
+  if (index > 0) {
+    const temp = selectedScripts.value[index];
+    selectedScripts.value[index] = selectedScripts.value[index - 1];
+    selectedScripts.value[index - 1] = temp;
+  }
+};
+
+const moveScriptDown = (index) => {
+  if (index < selectedScripts.value.length - 1) {
+    const temp = selectedScripts.value[index];
+    selectedScripts.value[index] = selectedScripts.value[index + 1];
+    selectedScripts.value[index + 1] = temp;
+  }
+};
+
+const getScriptRowClassName = ({ row }) => {
+  return selectedScripts.value.some((s) => s.id === row.id)
+    ? "selected-row"
+    : "";
+};
+
 const resetForm = () => {
   createForm.name = "";
   createForm.description = "";
   createForm.visibility = "all";
+  createForm.reuse_browser = false;
   selectedTestCases.value = [];
   testCaseSearchText.value = "";
+  selectedScripts.value = [];
+  scriptSearchText.value = "";
+  executionOrder.value = [];
+  suiteItemTab.value = "testCases";
   isEditing.value = false;
   currentSuiteId.value = null;
 };
@@ -910,11 +1276,6 @@ const handleCreateButtonClick = async () => {
   showCreateDialog.value = true;
 };
 
-// 辅助方法
-const formatDate = (row, column, cellValue) => {
-  if (!cellValue) return "";
-  return new Date(cellValue).toLocaleString();
-};
 
 const getExecutionStatusTag = (status) => {
   const statusMap = {
@@ -995,14 +1356,13 @@ onMounted(async () => {
 // 监听对话框打开事件
 const openCreateDialog = async () => {
   if (!isEditing.value) {
-    await loadAvailableTestCases();
+    await Promise.all([loadAvailableTestCases(), loadAvailableScripts()]);
   }
 };
 
-// 修改新增套件按钮点击事件
 const handleNewSuite = async () => {
   resetForm();
-  await loadAvailableTestCases();
+  await Promise.all([loadAvailableTestCases(), loadAvailableScripts()]);
   showCreateDialog.value = true;
 };
 </script>
@@ -1012,6 +1372,13 @@ const handleNewSuite = async () => {
   padding: 20px;
   background: #f5f5f5;
   min-height: 100vh;
+}
+
+.form-help-text {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 5px;
+  line-height: 1.4;
 }
 
 .page-header {
@@ -1098,5 +1465,11 @@ const handleNewSuite = async () => {
     color: #909399;
     line-height: 1.5;
   }
+}
+
+.form-help-inline {
+  margin-left: 10px;
+  font-size: 12px;
+  color: #909399;
 }
 </style>

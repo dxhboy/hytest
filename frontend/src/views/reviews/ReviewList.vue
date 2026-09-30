@@ -131,7 +131,7 @@
           <template #default="{ row }">
             {{
               row.deadline
-                ? formatDate(row.deadline)
+                ? formatDateMinute(row.deadline)
                 : $t("reviewList.noDeadline")
             }}
           </template>
@@ -142,7 +142,7 @@
           width="160"
         >
           <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
+            {{ formatDateMinute(row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column
@@ -241,8 +241,8 @@ import { useI18n } from "vue-i18n";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
 import api from "@/utils/api";
-import dayjs from "dayjs";
 import { useUserStore } from "@/stores/user";
+import { formatDateMinute } from "@/utils/format";
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -423,9 +423,6 @@ const canDelete = (review) => {
   );
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm");
-};
 
 onMounted(() => {
   fetchReviews();

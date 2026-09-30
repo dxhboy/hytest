@@ -59,7 +59,32 @@ TestHub 是一个功能强大的智能测试管理平台，集成了 **AI 需求
 
 ### 🖥️ UI 自动化测试
 - **双引擎支持**: 支持 Selenium 和 Playwright 两种自动化引擎
-- **元素管理**: 元素库管理，支持多种定位策略（ID、XPath、CSS 等）
+- **元素管理**: 元素库管理，支持 12 种定位策略，包含通用策略和 Playwright 专用策略：
+
+  | 定位策略 | 说明 | 定位表达式示例 |
+  |---------|------|---------------|
+  | ID | HTML id 属性 | `username` |
+  | CSS | CSS 选择器 | `input.login-input`, `#form > button` |
+  | XPath | XPath 表达式 | `//input[@placeholder="请输入用户名"]` |
+  | name | name 属性 | `password` |
+  | class | class 属性 | `el-button--primary` |
+  | tag | HTML 标签 | `input` |
+  | text | 可见文本内容 | `登录`, `提交订单` |
+  | placeholder | placeholder 属性 | `请输入密码` |
+  | role | ARIA role 属性 | `button`, `textbox` |
+  | label | 关联的 label 文本 | `用户名`, `邮箱地址` |
+  | title | title 属性 | `提交表单` |
+  | test-id | data-testid 属性 | `login-button`, `submit-form` |
+
+  **text 定位示例 —— 登录页面：**
+  ```
+  元素名称: 登录按钮        定位策略: text    定位表达式: 登录
+  元素名称: 忘记密码链接     定位策略: text    定位表达式: 忘记密码
+  元素名称: 注册入口         定位策略: text    定位表达式: 立即注册
+  元素名称: 用户协议链接     定位策略: text    定位表达式: 用户服务协议
+  ```
+
+  每个元素还支持**备用定位器**（`backup_locators`），主定位失败时自动回退，格式：`[{"strategy": "css", "value": ".btn-login"}, {"strategy": "xpath", "value": "//button[text()='登录']"}]`
 - **页面对象模式**: 支持 POM 设计模式，提高脚本可维护性
 - **测试脚本**: 可视化脚本编辑器，支持步骤录制和回放
 - **测试套件**: 批量执行测试脚本，支持多浏览器（Chrome/Firefox/Edge）
@@ -111,7 +136,7 @@ TestHub 是一个功能强大的智能测试管理平台，集成了 **AI 需求
   - 多模型支持：OpenAI、Anthropic、Google Gemini、DeepSeek、硅基流动等
 - **自动化测试**: Selenium, Playwright, Allure
 - **HTTP 客户端**: httpx (异步 HTTP)
-- **定时任务**: Django APScheduler
+- **定时任务**: Celery Beat
 
 ### 前端技术栈
 - **框架**: Vue 3.3 + Composition API
@@ -191,6 +216,7 @@ testhub_platform/
 - **Python**: 推荐Python3.12,其他版本可能会存在兼容性问题
 - **Node.js**: 18+
 - **MySQL**: 8.0+
+- **Redis**: 5.0+（Celery 任务队列与定时调度依赖，`.env` 中通过 `REDIS_URL` 配置）
 - **浏览器驱动**: ChromeDriver / GeckoDriver (用于 UI 自动化,建议提前下载好)
 
 ### 后端部署
@@ -212,7 +238,10 @@ source venv/bin/activate
 
 3. **安装依赖**
 ```bash
+# 运行环境
 pip install -r requirements.txt
+# 开发/测试环境（额外包含 pytest 等测试工具）
+pip install -r requirements-dev.txt
 ```
 
 4. **配置环境变量**
@@ -247,23 +276,49 @@ python manage.py createsuperuser
 python manage.py init_locator_strategies
 ```
 
-7. **启动定时任务**
-```bash
-# 启动统一任务调度器(同时管理API和UI模块)
-python manage.py run_all_scheduled_tasks
-```
-
-8. **数据工厂初始化（从低版本升级到当前版本需要执行此步骤，新安装不需要执行此步骤）**
+7. **数据工厂初始化（从低版本升级到当前版本需要执行此步骤，新安装不需要执行此步骤）**
 ```bash
 python manage.py makemigrations data_factory
 python manage.py migrate data_factory
 ```
 
-9. **启动服务**
+8. **启动服务**
+
+**一键启动（推荐）**：先启动 Redis，然后在项目根目录执行（脚本会自动使用项目下的 `venv`/`.venv`，无需先激活）：
+
 ```bash
-# 启动 Django 开发服务器
-python manage.py runserver
+python scripts/dev.py                          # 同时启动下表全部 5 个服务，Ctrl+C 一次全部停止
+python scripts/dev.py --skip ai,beat           # 不用 AI 智能模式/定时任务时可跳过
+python scripts/dev.py --only backend,frontend  # 只启动指定服务（backend/worker/ai/beat/frontend）
 ```
+
+脚本会先检查项目依赖是否安装、Redis 是否可连接、数据库迁移是否最新、端口是否被占用、前端依赖是否已安装；各服务输出汇总到同一终端，
+行首带 `[backend]`、`[worker]` 等前缀区分。
+
+**服务一览**：`dev.py` 启动的就是下表中的服务，也可以按表中命令在不同终端分别手动启动：
+
+| # | 服务 | `dev.py` 服务名 | 手动启动命令 | 是否必需 |
+|---|------|----------------|-------------|---------|
+| 0 | Redis | —（需自行启动） | 例如 `redis-server` | 必需：Celery 任务队列、定时调度、缓存都依赖它 |
+| 1 | 后端（HTTP 接口 + WebSocket，脚本录制也在这里） | `backend` | `uvicorn backend.asgi:application --host 0.0.0.0 --port 8001 --reload --loop backend.event_loop:loop_factory` | 必需 |
+| 2 | Celery worker（默认队列） | `worker` | `celery -A backend worker -Q celery --pool=threads --concurrency=4 --loglevel=info` | 必需：UI 套件执行、API 套件执行、AI 用例生成、定时任务的执行都走这里 |
+| 3 | Celery worker（AI 队列） | `ai` | `celery -A backend worker -Q ai_automation --pool=solo --loglevel=info -n ai@%h` | 使用 UI 自动化 **AI 智能模式**时需要 |
+| 4 | Celery Beat | `beat` | `celery -A backend beat --loglevel=info` | 需要**定时任务**自动触发时需要（不启动时手动"立即执行"仍可用） |
+| 5 | 前端（Vite） | `frontend` | `cd frontend` 后 `npm run dev` | 必需 |
+
+日常开发最少需要 0、1、2、5；3、4 按需启动（`python scripts/dev.py --skip ai,beat`）。
+
+说明：
+- 后端命令中的 `--loop` 必须保留：Windows 上 uvicorn 开启 `--reload` 时默认改用 SelectorEventLoop，脚本录制在后端用 Playwright 启动浏览器会报 `NotImplementedError`（见 `backend/event_loop.py`）
+- 后端端口 8001 是前端开发代理（`frontend/vite.config.js`）指向的端口，只需启动一个后端实例
+- Windows 不支持 Celery 的 prefork 池，默认队列用 threads 池；Linux/Mac 可去掉 `--pool=threads` 使用默认 prefork
+- AI 队列受 GIF 录制文件名限制只能单并发（`--pool=solo`）；Beat 全局只启动一个
+
+> 不便部署 Beat 时，可用 `python manage.py run_all_scheduled_tasks` 代替第 4 步（加 `--once` 只检查一次）。
+> 两者执行同一套调度逻辑，并存也不会重复执行任务。
+>
+> 未启动 worker 时，AI 用例生成、定时任务等会一直停留在"待执行"；未启动 Redis 时提交任务会直接失败，
+> 页面上会提示"提交到任务队列失败，请检查 Redis/Celery 是否启动"。
 
 ### 数据工厂模块初始化
 
@@ -297,12 +352,27 @@ npm run dev
 npm run build
 ```
 
+### 运行测试
+
+```bash
+# 测试库默认为 test_<DB_NAME>，可用 DB_TEST_NAME 指定；测试使用进程内缓存，不依赖 Redis
+python -m pytest
+```
+
+### 生产环境部署要点
+
+- `.env` 中设置 `DEBUG=False`、强随机 `SECRET_KEY`（否则拒绝启动）、`ALLOWED_HOSTS`、`CORS_ALLOWED_ORIGINS`、`CSRF_TRUSTED_ORIGINS`
+- Redis 为必需依赖：Celery 任务队列、定时调度，以及配置了 `REDIS_URL` 时的 Django 缓存都依赖它
+- 建议由 nginx 直接托管 `/media/`（Allure 报告、截图等）并设置 `SERVE_MEDIA=False`
+- 日志按大小轮转，可通过 `LOG_LEVEL`、`LOG_FILE_MAX_BYTES`、`LOG_FILE_BACKUP_COUNT` 调整
+- 按"启动服务"一节常驻 Celery worker 和 Beat（systemd / Supervisor 示例见 `apps/core/README.md`）
+
 ### 访问应用
 
 - **前端**: http://localhost:3000
-- **后端 API**: http://localhost:8000
-- **API 文档**: http://localhost:8000/api/docs/
-- **Admin 后台**: http://localhost:8000/admin/
+- **后端 API**: http://localhost:8001
+- **API 文档**: http://localhost:8001/api/docs/
+- **Admin 后台**: http://localhost:8001/admin/
 
 ## 📄 文档
 
@@ -324,8 +394,8 @@ npm run build
 `core` 模块是跨模块的通用功能模块，提供全局共享的管理命令和统一配置管理。
 
 **管理命令**:
-- `run_all_scheduled_tasks`: 统一定时任务调度器
-  - 同时调度 API 测试和 UI 自动化模块的定时任务
+- `run_all_scheduled_tasks`: 统一定时任务调度器（Celery Beat 的备用方式）
+  - 调度 API 测试、UI 自动化、定时用例生成三个模块的定时任务，实际执行提交给 Celery worker
   - 支持自定义检查间隔（默认60秒）
   - 支持单次执行模式（`--once`）
   - 详细日志输出，便于调试和监控

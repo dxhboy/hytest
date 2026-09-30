@@ -1,162 +1,110 @@
 <template>
   <div class="home-container">
+    <!-- Animated background particles -->
+    <div class="bg-particles">
+      <div v-for="n in 6" :key="n" class="particle" :class="'p' + n"></div>
+    </div>
+
     <div class="content-wrapper">
-      <div class="header-actions">
-        <el-dropdown @command="handleLanguageChange" class="language-dropdown">
-          <span class="el-dropdown-link">
-            <span class="language-icon">{{
-              currentLanguage === "zh-cn" ? "🇨🇳" : "🇺🇸"
-            }}</span>
-            <span class="language-text">{{ $t("home.language.current") }}</span>
-            <el-icon class="el-icon--right"><arrow-down /></el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item
-                command="zh-cn"
-                :disabled="currentLanguage === 'zh-cn'"
-              >
-                <span class="dropdown-flag">🇨🇳</span>
-                {{ $t("home.language.zhCN") }}
-              </el-dropdown-item>
-              <el-dropdown-item
-                command="en"
-                :disabled="currentLanguage === 'en'"
-              >
-                <span class="dropdown-flag">🇺🇸</span>
-                {{ $t("home.language.en") }}
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-
-        <el-dropdown @command="handleCommand">
-          <span class="el-dropdown-link">
-            <el-avatar :size="32" :icon="UserFilled" />
-            <span class="username">{{
-              userStore.user?.username || $t("home.user")
-            }}</span>
-            <el-icon class="el-icon--right"><arrow-down /></el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="logout">{{
-                $t("home.logout")
-              }}</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
-      <h1 class="main-title">{{ $t("home.title") }}</h1>
-      <p class="subtitle">{{ $t("home.subtitle") }}</p>
-
-      <div class="cards-container">
-        <!-- AI用例生成 -->
-        <div
-          class="nav-card"
-          @click="handleNavigate('ai')"
-          role="button"
-          tabindex="0"
-        >
-          <div class="card-icon ai-icon">
-            <el-icon><MagicStick /></el-icon>
+      <!-- Top bar -->
+      <header class="top-bar">
+        <div class="logo-area">
+          <div class="logo-icon">
+            <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="32" height="32" rx="8" fill="url(#logo-grad)" />
+              <path d="M8 12h16M8 16h10M8 20h13" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+              <circle cx="24" cy="20" r="4" fill="#fff" fill-opacity="0.3" />
+              <path d="M23 20l1 1 2-2.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              <defs>
+                <linearGradient id="logo-grad" x1="0" y1="0" x2="32" y2="32">
+                  <stop stop-color="#6366f1" />
+                  <stop offset="1" stop-color="#8b5cf6" />
+                </linearGradient>
+              </defs>
+            </svg>
           </div>
-          <h3>{{ $t("home.aiCaseGeneration") }}</h3>
-          <p>{{ $t("home.aiCaseGenerationDesc") }}</p>
+          <span class="logo-text">HyTest</span>
         </div>
 
-        <!-- 接口测试 -->
-        <div
-          class="nav-card"
-          @click="handleNavigate('api')"
-          role="button"
-          tabindex="0"
-        >
-          <div class="card-icon api-icon">
-            <el-icon><Link /></el-icon>
-          </div>
-          <h3>{{ $t("home.apiTesting") }}</h3>
-          <p>{{ $t("home.apiTestingDesc") }}</p>
-        </div>
+        <div class="header-actions">
+          <el-dropdown @command="handleLanguageChange" class="lang-switch">
+            <span class="action-btn">
+              <span class="lang-flag">{{ currentLanguage === 'zh-cn' ? 'CN' : 'EN' }}</span>
+              <span class="lang-label">{{ $t('home.language.current') }}</span>
+              <el-icon class="el-icon--right"><arrow-down /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="zh-cn" :disabled="currentLanguage === 'zh-cn'">
+                  {{ $t('home.language.zhCN') }}
+                </el-dropdown-item>
+                <el-dropdown-item command="en" :disabled="currentLanguage === 'en'">
+                  {{ $t('home.language.en') }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
 
-        <!-- UI自动化测试 -->
-        <div
-          class="nav-card"
-          @click="handleNavigate('ui')"
-          role="button"
-          tabindex="0"
-        >
-          <div class="card-icon ui-icon">
-            <el-icon><Monitor /></el-icon>
-          </div>
-          <h3>{{ $t("home.uiAutomation") }}</h3>
-          <p>{{ $t("home.uiAutomationDesc") }}</p>
+          <el-dropdown @command="handleCommand">
+            <span class="action-btn user-btn">
+              <el-avatar :size="30" :icon="UserFilled" class="user-avatar" />
+              <span class="username">{{ userStore.user?.username || $t('home.user') }}</span>
+              <el-icon class="el-icon--right"><arrow-down /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">{{ $t('home.logout') }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
+      </header>
 
-        <!-- 数据工厂 -->
+      <!-- Hero section -->
+      <section class="hero">
+        <h1 class="hero-title">
+          <span class="title-line">{{ $t('home.title') }}</span>
+        </h1>
+      </section>
+
+      <!-- Feature cards -->
+      <section class="cards-grid">
         <div
-          class="nav-card"
-          @click="handleNavigate('data')"
+          v-for="(card, index) in cards"
+          :key="card.type"
+          class="feature-card"
+          :class="'card-' + card.type"
+          :style="{ '--delay': index * 0.08 + 's' }"
+          @click="handleNavigate(card.type)"
           role="button"
           tabindex="0"
         >
-          <div class="card-icon data-icon">
-            <el-icon><DataLine /></el-icon>
+          <div class="card-glow"></div>
+          <div class="card-body">
+            <div class="icon-wrapper" :class="'icon-' + card.type">
+              <el-icon><component :is="card.icon" /></el-icon>
+            </div>
+            <div class="card-text">
+              <h3>{{ $t(card.titleKey) }}</h3>
+              <p>{{ $t(card.descKey) }}</p>
+            </div>
+            <div class="card-arrow">
+              <el-icon><ArrowRight /></el-icon>
+            </div>
           </div>
-          <h3>{{ $t("home.dataFactory") }}</h3>
-          <p>{{ $t("home.dataFactoryDesc") }}</p>
         </div>
-        <!-- AI 智能模式 -->
-        <div
-          class="nav-card"
-          @click="handleNavigate('ai-intelligent')"
-          role="button"
-          tabindex="0"
-        >
-          <div class="card-icon ai-intelligent-icon">
-            <el-icon><Cpu /></el-icon>
-          </div>
-          <h3>{{ $t("home.aiIntelligentMode") }}</h3>
-          <p>{{ $t("home.aiIntelligentModeDesc") }}</p>
-        </div>
-        <!-- AI评测师 -->
-        <div
-          class="nav-card"
-          @click="handleNavigate('assistant')"
-          role="button"
-          tabindex="0"
-        >
-          <div class="card-icon assistant-icon">
-            <el-icon><ChatDotRound /></el-icon>
-          </div>
-          <h3>{{ $t("home.aiEvaluator") }}</h3>
-          <p>{{ $t("home.aiEvaluatorDesc") }}</p>
-        </div>
-        <!-- 配置中心 -->
-        <div
-          class="nav-card"
-          @click="handleNavigate('config')"
-          role="button"
-          tabindex="0"
-        >
-          <div class="card-icon config-icon">
-            <el-icon><Setting /></el-icon>
-          </div>
-          <h3>{{ $t("home.configCenter") }}</h3>
-          <p>{{ $t("home.configCenterDesc") }}</p>
-        </div>
-      </div>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from "vue";
-import { useRouter } from "vue-router";
-import { useI18n } from "vue-i18n";
-import { useUserStore } from "@/stores/user";
-import { useAppStore } from "@/stores/app";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { useUserStore } from '@/stores/user'
+import { useAppStore } from '@/stores/app'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   MagicStick,
   Link,
@@ -167,511 +115,455 @@ import {
   ChatDotRound,
   UserFilled,
   ArrowDown,
-} from "@element-plus/icons-vue";
+  ArrowRight,
+} from '@element-plus/icons-vue'
 
-const router = useRouter();
-const { t } = useI18n();
-const userStore = useUserStore();
-const appStore = useAppStore();
+const router = useRouter()
+const { t } = useI18n()
+const userStore = useUserStore()
+const appStore = useAppStore()
 
-// 当前语言
-const currentLanguage = computed(() => appStore.language);
+const currentLanguage = computed(() => appStore.language)
 
-// 语言切换（无刷新）
+const cards = ref([
+  { type: 'ai', icon: MagicStick, titleKey: 'home.aiCaseGeneration', descKey: 'home.aiCaseGenerationDesc' },
+  { type: 'api', icon: Link, titleKey: 'home.apiTesting', descKey: 'home.apiTestingDesc' },
+  { type: 'ui', icon: Monitor, titleKey: 'home.uiAutomation', descKey: 'home.uiAutomationDesc' },
+  { type: 'data', icon: DataLine, titleKey: 'home.dataFactory', descKey: 'home.dataFactoryDesc' },
+  { type: 'ai-intelligent', icon: Cpu, titleKey: 'home.aiIntelligentMode', descKey: 'home.aiIntelligentModeDesc' },
+  { type: 'assistant', icon: ChatDotRound, titleKey: 'home.aiEvaluator', descKey: 'home.aiEvaluatorDesc' },
+  { type: 'config', icon: Setting, titleKey: 'home.configCenter', descKey: 'home.configCenterDesc' },
+])
+
 const handleLanguageChange = (lang) => {
-  appStore.setLanguage(lang);
-};
+  appStore.setLanguage(lang)
+}
 
 const handleCommand = (command) => {
-  if (command === "logout") {
-    handleLogout();
+  if (command === 'logout') {
+    handleLogout()
   }
-};
+}
 
 const handleLogout = () => {
-  ElMessageBox.confirm(t("home.logoutConfirm"), t("common.tips"), {
-    confirmButtonText: t("common.confirm"),
-    cancelButtonText: t("common.cancel"),
-    type: "warning",
+  ElMessageBox.confirm(t('home.logoutConfirm'), t('common.tips'), {
+    confirmButtonText: t('common.confirm'),
+    cancelButtonText: t('common.cancel'),
+    type: 'warning',
   })
     .then(() => {
-      userStore.logout();
-      router.push("/login");
-      ElMessage.success(t("home.logoutSuccess"));
+      userStore.logout()
+      router.push('/login')
+      ElMessage.success(t('home.logoutSuccess'))
     })
-    .catch(() => {});
-};
+    .catch(() => {})
+}
 
 const handleNavigate = (type) => {
   const routes = {
-    ai: "/ai-generation/requirement-analysis",
-    api: "/api-testing/dashboard",
-    ui: "/ui-automation/dashboard",
-    "ai-intelligent": "/ai-intelligent-mode/testing",
-    assistant: "/ai-generation/assistant",
-    config: "/configuration/ai-model",
-    data: "/data-factory",
-  };
-
-  if (routes[type]) {
-    const routeData = router.resolve({ path: routes[type] });
-    window.open(routeData.href, "_blank");
+    ai: '/ai-generation/requirement-analysis',
+    api: '/api-testing/dashboard',
+    ui: '/ui-automation/dashboard',
+    'ai-intelligent': '/ai-intelligent-mode/testing',
+    assistant: '/ai-generation/assistant',
+    config: '/configuration/ai-model',
+    data: '/data-factory',
   }
-};
+  if (routes[type]) {
+    const routeData = router.resolve({ path: routes[type] })
+    window.open(routeData.href, '_blank')
+  }
+}
 </script>
 
 <style scoped lang="scss">
+/* ===== Variables ===== */
+$primary: #6366f1;
+$primary-light: #818cf8;
+$surface: rgba(255, 255, 255, 0.6);
+$surface-hover: rgba(255, 255, 255, 0.85);
+$text-primary: #1e1b4b;
+$text-secondary: #6b7280;
+$radius: 20px;
+$transition: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+
+/* ===== Background ===== */
 .home-container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
+  background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 25%, #f0fdf4 50%, #ede9fe 75%, #fdf2f8 100%);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+  position: relative;
+  overflow: hidden;
 }
 
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Floating particles */
+.bg-particles {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.15;
+  animation: float 20s ease-in-out infinite;
+
+  &.p1 { width: 300px; height: 300px; background: #6366f1; top: -5%; left: -5%; animation-delay: 0s; }
+  &.p2 { width: 200px; height: 200px; background: #8b5cf6; top: 60%; right: -3%; animation-delay: -5s; }
+  &.p3 { width: 150px; height: 150px; background: #06b6d4; bottom: 10%; left: 20%; animation-delay: -10s; }
+  &.p4 { width: 100px; height: 100px; background: #f59e0b; top: 30%; left: 60%; animation-delay: -7s; }
+  &.p5 { width: 180px; height: 180px; background: #10b981; top: 10%; right: 25%; animation-delay: -3s; }
+  &.p6 { width: 120px; height: 120px; background: #ec4899; bottom: 20%; right: 15%; animation-delay: -12s; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -30px) scale(1.05); }
+  50% { transform: translate(-20px, 20px) scale(0.95); }
+  75% { transform: translate(15px, 10px) scale(1.02); }
+}
+
+/* ===== Layout ===== */
 .content-wrapper {
-  text-align: center;
-  max-width: 1200px;
-  width: 100%;
   position: relative;
+  z-index: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px 60px;
+}
+
+/* ===== Top bar ===== */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 0;
+}
+
+.logo-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+  }
+
+  .logo-text {
+    font-size: 20px;
+    font-weight: 700;
+    color: $text-primary;
+    letter-spacing: -0.5px;
+  }
 }
 
 .header-actions {
-  position: absolute;
-  top: 0;
-  right: 0;
-  padding: 10px;
   display: flex;
   align-items: center;
-  gap: 20px;
-
-  .language-dropdown {
-    .el-dropdown-link {
-      display: flex;
-      align-items: center;
-      cursor: pointer;
-      color: #5e6d82;
-      transition: color 0.3s;
-      outline: none;
-
-      &:focus {
-        outline: none;
-      }
-
-      .language-icon {
-        font-size: 18px;
-        margin-right: 5px;
-        line-height: 1;
-      }
-
-      .language-text {
-        margin: 0 5px;
-        font-size: 14px;
-      }
-
-      &:hover {
-        color: #409eff;
-      }
-    }
-  }
-
-  .el-dropdown-link {
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-    color: #5e6d82;
-    transition: color 0.3s;
-    outline: none;
-
-    &:focus {
-      outline: none;
-    }
-
-    .username {
-      margin: 0 8px;
-      font-size: 14px;
-    }
-
-    &:hover {
-      color: #409eff;
-    }
-  }
+  gap: 8px;
 }
 
-.dropdown-flag {
-  font-size: 16px;
-  margin-right: 5px;
-}
-
-.main-title {
-  font-size: 3.5rem;
-  color: #2c3e50;
-  margin-bottom: 1rem;
-  font-weight: 700;
-  letter-spacing: 2px;
-}
-
-.subtitle {
-  font-size: 1.5rem;
-  color: #5e6d82;
-  margin-bottom: 4rem;
-}
-
-.cards-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 30px;
-  padding: 20px;
-}
-
-.nav-card {
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 16px;
-  padding: 40px 20px;
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  color: $text-secondary;
+  font-size: 14px;
+  transition: $transition;
+  outline: none;
 
   &:hover {
-    transform: translateY(-10px);
-    box-shadow: 0 20px 30px rgba(0, 0, 0, 0.1);
-    background: #fff;
-  }
-
-  h3 {
-    font-size: 1.5rem;
-    color: #2c3e50;
-    margin: 20px 0 10px;
-  }
-
-  p {
-    color: #7f8c8d;
-    line-height: 1.5;
-    margin: 0;
+    background: $surface;
+    color: $primary;
   }
 }
 
-.card-icon {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
+.lang-flag {
+  font-size: 11px;
+  font-weight: 700;
+  background: linear-gradient(135deg, $primary, $primary-light);
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.user-btn {
+  .user-avatar {
+    background: linear-gradient(135deg, $primary, $primary-light);
+  }
+}
+
+.username {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===== Hero ===== */
+.hero {
+  text-align: center;
+  padding: 48px 0 40px;
+  animation: fadeInUp 0.6s ease both;
+}
+
+.hero-title {
+  font-size: 3rem;
+  font-weight: 800;
+  color: $text-primary;
+  line-height: 1.2;
+  margin: 0 0 16px;
+  letter-spacing: -1px;
+
+  .title-line {
+    background: linear-gradient(135deg, #4f46e5, #7c3aed, #2563eb);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+.hero-desc {
+  font-size: 1.1rem;
+  color: $text-secondary;
+  margin: 0;
+  font-weight: 400;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Cards grid ===== */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+/* ===== Feature card ===== */
+.feature-card {
+  position: relative;
+  border-radius: $radius;
+  cursor: pointer;
+  animation: cardIn 0.5s ease both;
+  animation-delay: var(--delay);
+  overflow: hidden;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: $surface;
+  transition: $transition;
+
+  &:hover {
+    transform: translateY(-6px);
+    background: $surface-hover;
+    border-color: rgba(99, 102, 241, 0.2);
+    box-shadow: 0 20px 40px -12px rgba(99, 102, 241, 0.15),
+                0 8px 16px -8px rgba(0, 0, 0, 0.06);
+
+    .card-glow {
+      opacity: 1;
+    }
+
+    .icon-wrapper {
+      transform: scale(1.08) rotate(-3deg);
+    }
+
+    .card-arrow {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  &:active {
+    transform: translateY(-2px) scale(0.98);
+  }
+}
+
+.card-glow {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  opacity: 0;
+  transition: opacity 0.5s;
+  pointer-events: none;
+}
+
+.card-ai .card-glow { background: radial-gradient(circle at 30% 30%, rgba(99, 102, 241, 0.08), transparent 60%); }
+.card-api .card-glow { background: radial-gradient(circle at 30% 30%, rgba(16, 185, 129, 0.08), transparent 60%); }
+.card-ui .card-glow { background: radial-gradient(circle at 30% 30%, rgba(245, 158, 11, 0.08), transparent 60%); }
+.card-data .card-glow { background: radial-gradient(circle at 30% 30%, rgba(6, 182, 212, 0.08), transparent 60%); }
+.card-ai-intelligent .card-glow { background: radial-gradient(circle at 30% 30%, rgba(139, 92, 246, 0.08), transparent 60%); }
+.card-assistant .card-glow { background: radial-gradient(circle at 30% 30%, rgba(236, 72, 153, 0.08), transparent 60%); }
+.card-config .card-glow { background: radial-gradient(circle at 30% 30%, rgba(107, 114, 128, 0.08), transparent 60%); }
+
+.card-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+}
+
+.icon-wrapper {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 40px;
-  margin-bottom: 10px;
-  transition: all 0.3s ease;
+  font-size: 24px;
+  transition: $transition;
 
-  &.ai-icon {
-    background: #e8f4ff;
-    color: #409eff;
+  &.icon-ai {
+    background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+    color: #6366f1;
   }
-
-  &.api-icon {
-    background: #f0f9eb;
-    color: #67c23a;
+  &.icon-api {
+    background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+    color: #10b981;
   }
-
-  &.ui-icon {
-    background: #fdf6ec;
-    color: #e6a23c;
+  &.icon-ui {
+    background: linear-gradient(135deg, #fffbeb, #fef3c7);
+    color: #f59e0b;
   }
-
-  &.data-icon {
-    background: #e8f4ff;
-    color: #409eff;
+  &.icon-data {
+    background: linear-gradient(135deg, #ecfeff, #cffafe);
+    color: #06b6d4;
   }
-
-  &.ai-intelligent-icon {
-    background: #f0f5ff;
-    color: #2f54eb;
+  &.icon-ai-intelligent {
+    background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+    color: #8b5cf6;
   }
-
-  &.config-icon {
-    background: #e6fffb;
-    color: #13c2c2;
+  &.icon-assistant {
+    background: linear-gradient(135deg, #fdf2f8, #fce7f3);
+    color: #ec4899;
   }
-
-  &.assistant-icon {
-    background: #fff7e6;
-    color: #fa8c16;
+  &.icon-config {
+    background: linear-gradient(135deg, #f9fafb, #f3f4f6);
+    color: #6b7280;
   }
 }
 
-.nav-card:hover .card-icon {
-  transform: scale(1.1);
-}
+.card-text {
+  flex: 1;
+  min-width: 0;
 
-@media screen and (max-width: 1920px) {
-  .main-title {
-    font-size: 3.2rem;
+  h3 {
+    font-size: 1rem;
+    font-weight: 650;
+    color: $text-primary;
+    margin: 0 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .subtitle {
-    font-size: 1.4rem;
-  }
-
-  .cards-container {
-    gap: 28px;
-    padding: 18px;
-  }
-}
-
-@media screen and (max-width: 1600px) {
-  .main-title {
-    font-size: 3rem;
-  }
-
-  .subtitle {
-    font-size: 1.3rem;
-  }
-
-  .cards-container {
-    gap: 26px;
-    padding: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  }
-
-  .nav-card {
-    padding: 35px 18px;
+  p {
+    font-size: 0.8rem;
+    color: $text-secondary;
+    margin: 0;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
-@media screen and (max-width: 1440px) {
-  .main-title {
-    font-size: 2.8rem;
-  }
+.card-arrow {
+  flex-shrink: 0;
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: $transition;
+  color: $primary;
+  font-size: 18px;
+}
 
-  .subtitle {
-    font-size: 1.2rem;
-  }
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 
-  .cards-container {
-    gap: 24px;
-    padding: 14px;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  }
-
-  .nav-card {
-    padding: 30px 16px;
-
-    h3 {
-      font-size: 1.4rem;
-    }
-  }
-
-  .card-icon {
-    width: 70px;
-    height: 70px;
-    font-size: 35px;
+/* ===== Responsive ===== */
+@media screen and (max-width: 1200px) {
+  .cards-grid {
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 
-@media screen and (max-width: 1366px) {
-  .main-title {
-    font-size: 2.6rem;
+@media screen and (max-width: 900px) {
+  .cards-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  .subtitle {
-    font-size: 1.1rem;
-  }
-
-  .cards-container {
-    gap: 22px;
-    padding: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  }
-
-  .nav-card {
-    padding: 28px 14px;
-
-    h3 {
-      font-size: 1.3rem;
-    }
-  }
-
-  .card-icon {
-    width: 65px;
-    height: 65px;
-    font-size: 32px;
-  }
-}
-
-@media screen and (max-width: 1280px) {
-  .main-title {
+  .hero-title {
     font-size: 2.4rem;
   }
 
-  .subtitle {
-    font-size: 1rem;
-  }
-
-  .cards-container {
-    gap: 20px;
-    padding: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  }
-
-  .nav-card {
-    padding: 25px 12px;
-
-    h3 {
-      font-size: 1.2rem;
-    }
-  }
-
-  .card-icon {
-    width: 60px;
-    height: 60px;
-    font-size: 30px;
+  .hero {
+    padding: 36px 0 32px;
   }
 }
 
-@media screen and (max-width: 1024px) {
-  .home-container {
-    padding: 15px;
-  }
-
-  .main-title {
-    font-size: 2.2rem;
-  }
-
-  .subtitle {
-    font-size: 1rem;
-    margin-bottom: 3rem;
-  }
-
-  .cards-container {
-    gap: 18px;
-    padding: 10px;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  }
-
-  .nav-card {
-    padding: 20px 10px;
-
-    h3 {
-      font-size: 1.1rem;
-    }
-
-    p {
-      font-size: 0.9rem;
-    }
-  }
-
-  .card-icon {
-    width: 55px;
-    height: 55px;
-    font-size: 28px;
-  }
-
-  .header-actions {
-    padding: 8px;
-  }
-}
-
-@media screen and (max-width: 768px) {
-  .home-container {
-    padding: 10px;
-  }
-
+@media screen and (max-width: 640px) {
   .content-wrapper {
-    max-width: 100%;
+    padding: 0 16px 40px;
   }
 
-  .main-title {
+  .hero-title {
     font-size: 1.8rem;
-    letter-spacing: 1px;
   }
 
-  .subtitle {
-    font-size: 0.9rem;
-    margin-bottom: 2rem;
+  .hero-desc {
+    font-size: 0.95rem;
   }
 
-  .cards-container {
-    gap: 15px;
-    padding: 8px;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  }
-
-  .nav-card {
-    padding: 18px 8px;
-    border-radius: 12px;
-
-    h3 {
-      font-size: 1rem;
-      margin: 15px 0 8px;
-    }
-
-    p {
-      font-size: 0.8rem;
-      line-height: 1.3;
-    }
-  }
-
-  .card-icon {
-    width: 50px;
-    height: 50px;
-    font-size: 24px;
-  }
-
-  .header-actions {
-    padding: 5px;
-
-    .username {
-      display: none;
-    }
-  }
-}
-
-@media screen and (max-width: 480px) {
-  .home-container {
-    padding: 8px;
-  }
-
-  .main-title {
-    font-size: 1.5rem;
-  }
-
-  .subtitle {
-    font-size: 0.8rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .cards-container {
+  .cards-grid {
+    grid-template-columns: 1fr;
     gap: 12px;
-    padding: 6px;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
 
-  .nav-card {
-    padding: 15px 6px;
-    border-radius: 10px;
-
-    h3 {
-      font-size: 0.9rem;
-      margin: 12px 0 6px;
-    }
-
-    p {
-      font-size: 0.75rem;
-      line-height: 1.2;
-    }
+  .card-body {
+    padding: 18px;
   }
 
-  .card-icon {
-    width: 45px;
-    height: 45px;
-    font-size: 22px;
+  .icon-wrapper {
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+    border-radius: 12px;
   }
 
-  .header-actions {
-    padding: 3px;
+  .username {
+    display: none;
+  }
+
+  .lang-label {
+    display: none;
   }
 }
 </style>

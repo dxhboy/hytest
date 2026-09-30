@@ -150,7 +150,7 @@
               </el-select>
               <el-select
                 v-model="headlessMode"
-                :placeholder="t('uiAutomation.testCase.runMode')"
+                :placeholder="t('uiAutomation.testCase.runMode.label')"
                 size="small"
                 style="width: 110px; margin-right: 10px"
               >
@@ -173,7 +173,7 @@
                 {{
                   isRunning
                     ? t("uiAutomation.testCase.running")
-                    : t("uiAutomation.testCase.run")
+                    : t("uiAutomation.testCase.run.label")
                 }}
               </el-button>
               <el-button

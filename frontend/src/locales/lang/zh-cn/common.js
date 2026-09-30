@@ -24,4 +24,13 @@ export default {
   selectProject: "选择项目",
   previous: "上一步",
   next: "下一步",
+  request: {
+    sessionExpired: "登录已过期，请重新登录",
+    serverError: "服务器错误，请稍后重试",
+  },
+  notFound: {
+    title: "页面不存在",
+    description: "抱歉，您访问的页面不存在或已被移除",
+    backHome: "返回首页",
+  },
 };

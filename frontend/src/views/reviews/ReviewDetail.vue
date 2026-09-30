@@ -52,11 +52,11 @@
           </el-descriptions-item>
           <el-descriptions-item :label="$t('reviewDetail.deadline')">{{
             review.deadline
-              ? formatDate(review.deadline)
+              ? formatDateMinute(review.deadline)
               : $t("reviewDetail.none")
           }}</el-descriptions-item>
           <el-descriptions-item :label="$t('reviewDetail.createdAt')">{{
-            formatDate(review.created_at)
+            formatDateMinute(review.created_at)
           }}</el-descriptions-item>
           <el-descriptions-item
             :label="$t('reviewDetail.reviewDescription')"
@@ -191,7 +191,7 @@
             width="160"
           >
             <template #default="{ row }">
-              {{ formatDate(row.assigned_at) }}
+              {{ formatDateMinute(row.assigned_at) }}
             </template>
           </el-table-column>
           <el-table-column
@@ -202,7 +202,7 @@
             <template #default="{ row }">
               {{
                 row.reviewed_at
-                  ? formatDate(row.reviewed_at)
+                  ? formatDateMinute(row.reviewed_at)
                   : $t("reviewDetail.pendingReviewTime")
               }}
             </template>
@@ -289,7 +289,7 @@
                 </el-tag>
               </div>
               <div class="comment-time">
-                {{ formatDate(comment.created_at) }}
+                {{ formatDateMinute(comment.created_at) }}
               </div>
             </div>
             <div class="comment-content">{{ comment.content }}</div>
@@ -456,8 +456,8 @@ import { useI18n } from "vue-i18n";
 import { ElMessage } from "element-plus";
 import { Check, Close, QuestionFilled } from "@element-plus/icons-vue";
 import api from "@/utils/api";
-import dayjs from "dayjs";
 import { useUserStore } from "@/stores/user";
+import { formatDateMinute } from "@/utils/format";
 
 const route = useRoute();
 const router = useRouter();
@@ -689,9 +689,6 @@ const getCommentTypeText = (type) => {
   return textMap[type] || "-";
 };
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm");
-};
 
 // 检查清单相关方法
 const checkAll = (value) => {

@@ -60,7 +60,7 @@
         width="160"
       >
         <template #default="scope">
-          {{ formatDate(scope.row.created_at) }}
+          {{ formatDateMinute(scope.row.created_at) }}
         </template>
       </el-table-column>
       <el-table-column
@@ -207,7 +207,7 @@
 
 <script setup>
 import { ref } from "vue";
-import dayjs from "dayjs";
+import { formatDateMinute } from "@/utils/format";
 
 defineProps({
   data: {
@@ -229,9 +229,6 @@ defineEmits(["edit", "delete", "activate", "duplicate"]);
 const showViewDialog = ref(false);
 const viewingEnvironment = ref(null);
 
-const formatDate = (dateString) => {
-  return dayjs(dateString).format("YYYY-MM-DD HH:mm");
-};
 
 const formatVariables = (variables) => {
   if (!variables || typeof variables !== "object") return [];
